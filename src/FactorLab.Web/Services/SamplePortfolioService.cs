@@ -79,6 +79,7 @@ public sealed class SamplePortfolioService : IPortfolioRepository
             WeightedDays = 34m,
             EffectiveApr = 36.2m,
             InvoiceNumbers = "INV-2026-1042",
+            PortalToken = "BALKAN1042",
             Notes = "Awaiting client acceptance in portal."
         }
     };
