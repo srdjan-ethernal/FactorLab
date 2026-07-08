@@ -62,6 +62,27 @@ public sealed class SamplePortfolioService : IPortfolioRepository
 
     public List<FundingBatch> FundingBatches { get; } = new();
 
+    public List<ClientOffer> ClientOffers { get; } = new()
+    {
+        new ClientOffer
+        {
+            OfferNumber = "OFR-2026-0001",
+            ClientName = "Balkan Components d.o.o.",
+            Status = ClientOfferStatus.Sent,
+            SentToEmail = "finance@balkan-components.example",
+            InvoiceCount = 1,
+            GrossReceivables = 42000m,
+            AdvanceAmount = 35700m,
+            Fees = 1205m,
+            ReserveHeld = 6300m,
+            NetCash = 34495m,
+            WeightedDays = 34m,
+            EffectiveApr = 36.2m,
+            InvoiceNumbers = "INV-2026-1042",
+            Notes = "Awaiting client acceptance in portal."
+        }
+    };
+
     public List<PaymentMatch> PaymentMatches { get; } = new()
     {
         new PaymentMatch { Reference = "BANK-20260706-001", InvoiceNumber = "INV-2026-1083", Debtor = "GreenGrid Energy", Amount = 87000m, Currency = "EUR", Status = PaymentMatchStatus.Matched, Note = "Sample payment already matched." }

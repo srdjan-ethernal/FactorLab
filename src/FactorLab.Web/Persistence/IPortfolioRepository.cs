@@ -13,6 +13,7 @@ public interface IPortfolioRepository
     List<CollectionCase> CollectionCases { get; }
     List<CollectionActivity> CollectionActivities { get; }
     List<FundingBatch> FundingBatches { get; }
+    List<ClientOffer> ClientOffers { get; }
     List<PaymentMatch> PaymentMatches { get; }
     List<DisputeCase> DisputeCases { get; }
     List<DebtorConfirmationRequest> DebtorConfirmations { get; }

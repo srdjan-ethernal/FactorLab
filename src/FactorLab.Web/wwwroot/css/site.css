@@ -246,6 +246,108 @@ button:disabled {
     margin-bottom: 14px;
 }
 
+.client-portal-panel {
+    margin-bottom: 14px;
+}
+
+.offer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.offer-card {
+    display: grid;
+    min-height: 248px;
+    align-content: space-between;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 14px;
+}
+
+.offer-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.offer-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.offer-metrics span {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--muted);
+    padding: 8px;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.offer-metrics b {
+    display: block;
+    margin-top: 3px;
+    color: var(--ink);
+    font-size: 0.92rem;
+}
+
+.portal-link {
+    display: grid;
+    gap: 3px;
+    border-left: 4px solid var(--accent-2);
+    border-radius: 8px;
+    background: #fbfcfa;
+    padding: 9px 10px;
+}
+
+.portal-link span {
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 0.82rem;
+    font-weight: 850;
+}
+
+.portal-link small {
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 750;
+}
+
+.offer-status {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.offer-status.draft {
+    background: #eef2ed;
+    color: var(--muted);
+}
+
+.offer-status.sent {
+    background: #e7eff8;
+    color: var(--accent-2);
+}
+
+.offer-status.accepted {
+    background: #e7f3e8;
+    color: var(--good);
+}
+
+.offer-status.declined,
+.offer-status.expired {
+    background: #fde7e7;
+    color: var(--danger);
+}
+
 .action-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1620,6 +1722,7 @@ pre {
     .content-grid,
     .insight-grid,
     .action-grid,
+    .offer-grid,
     .covenant-grid,
     .fraud-grid,
     .availability-strip,

@@ -38,6 +38,7 @@ builder.Services.AddSingleton<IPaymentReconciliationService, CsvPaymentReconcili
 builder.Services.AddSingleton<IDisputeService, DisputeService>();
 builder.Services.AddSingleton<IDebtorConfirmationService, DebtorConfirmationService>();
 builder.Services.AddSingleton<IFraudSignalService, FraudSignalService>();
+builder.Services.AddSingleton<IClientOfferService, ClientOfferService>();
 #if ENABLE_EFCORE
 builder.Services.AddDbContext<FactorLabDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("FactorLabSql")));
@@ -231,6 +232,34 @@ app.MapPost("/api/debtor-confirmations/dispute/{requestNumber}", (string request
 
 app.MapGet("/api/fraud-signals", (IPortfolioRepository portfolio, IFraudSignalService fraudSignals) =>
     Results.Ok(fraudSignals.Detect(portfolio)));
+
+app.MapGet("/api/client-offers", (IPortfolioRepository portfolio) =>
+    Results.Ok(portfolio.ClientOffers));
+
+app.MapPost("/api/client-offers/create/{clientName}", (string clientName, IPortfolioRepository portfolio, IClientOfferService offers, IIntegrationOutboxService outbox) =>
+{
+    var offer = offers.CreateOffer(portfolio, Uri.UnescapeDataString(clientName), "API");
+    if (offer is null)
+    {
+        return Results.BadRequest(new { Error = "No eligible submitted, review or approved invoices for this client." });
+    }
+
+    outbox.Publish("ClientOffer.Created", offer.OfferNumber, $"{offer.ClientName} offer created for {offer.InvoiceCount} invoice(s).", "Dynamics 365");
+    return Results.Ok(offer);
+});
+
+app.MapPost("/api/client-offers/accept/{offerNumber}", (string offerNumber, IPortfolioRepository portfolio, IClientOfferService offers, IIntegrationOutboxService outbox) =>
+{
+    var offer = portfolio.ClientOffers.FirstOrDefault(item => item.OfferNumber.Equals(offerNumber, StringComparison.OrdinalIgnoreCase));
+    if (offer is null)
+    {
+        return Results.NotFound(new { Error = "Offer not found." });
+    }
+
+    offers.Accept(portfolio, offer, "Client portal");
+    outbox.Publish("ClientOffer.Accepted", offer.OfferNumber, $"{offer.ClientName} accepted {offer.NetCash:N2} net cash offer.", "Dynamics 365");
+    return Results.Ok(offer);
+});
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");

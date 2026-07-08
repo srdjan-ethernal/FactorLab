@@ -23,6 +23,7 @@
 @inject IDisputeService DisputeService
 @inject IDebtorConfirmationService DebtorConfirmationService
 @inject IFraudSignalService FraudSignals
+@inject IClientOfferService ClientOffers
 @inject IJSRuntime JsRuntime
 
 <PageTitle>FactorLab</PageTitle>
@@ -84,6 +85,56 @@
         <strong>@summary.DocumentReadyCount/@invoices.Count</strong>
         <small>@summary.MissingRequiredDocuments missing required docs</small>
     </article>
+</section>
+
+<section class="panel client-portal-panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Client portal</p>
+            <h2>Offer acceptance desk</h2>
+            @if (!string.IsNullOrWhiteSpace(clientOfferMessage))
+            {
+                <small class="inline-status">@clientOfferMessage</small>
+            }
+        </div>
+        <div class="heading-actions">
+            <select class="memo-select" @bind="selectedOfferClientName">
+                @foreach (var client in Portfolio.Clients)
+                {
+                    <option value="@client.Name">@client.Name</option>
+                }
+            </select>
+            <button class="primary-action" disabled="@(!UserContext.CanUnderwrite)" @onclick="CreateClientOffer">Create offer</button>
+        </div>
+    </div>
+    <div class="offer-grid">
+        @foreach (var offer in Portfolio.ClientOffers.OrderByDescending(item => item.CreatedAt).Take(6))
+        {
+            <article class="offer-card">
+                <div class="integration-head">
+                    <span class="@ClientOfferStatusClass(offer.Status)">@offer.Status</span>
+                    <span>@offer.OfferNumber</span>
+                </div>
+                <strong>@offer.ClientName</strong>
+                <div class="offer-metrics">
+                    <span>Gross <b>@Money(offer.GrossReceivables)</b></span>
+                    <span>Net cash <b>@Money(offer.NetCash)</b></span>
+                    <span>Fees <b>@Money(offer.Fees)</b></span>
+                    <span>APR <b>@offer.EffectiveApr.ToString("0.0")%</b></span>
+                </div>
+                <p>@offer.InvoiceCount invoice(s): @offer.InvoiceNumbers</p>
+                <div class="portal-link">
+                    <span>/portal/@offer.PortalToken</span>
+                    <small>Expires @offer.ExpiresAt.ToString("dd MMM") / @offer.SentToEmail</small>
+                </div>
+                <div class="collection-actions">
+                    <button class="secondary-action" disabled="@(!UserContext.CanUnderwrite || offer.Status != ClientOfferStatus.Draft)" @onclick="() => SendClientOffer(offer)">Send</button>
+                    <button class="secondary-action" disabled="@(!offer.IsActionable)" @onclick="() => AcceptClientOffer(offer)">Accept</button>
+                    <button class="danger-action" disabled="@(!offer.IsActionable)" @onclick="() => DeclineClientOffer(offer)">Decline</button>
+                </div>
+            </article>
+        }
+    </div>
 </section>
 
 <section class="panel action-panel">
@@ -955,6 +1006,8 @@
     private string importStatusMessage = "";
     private string fundingBatchMessage = "";
     private string paymentReconciliationMessage = "";
+    private string clientOfferMessage = "";
+    private string? selectedOfferClientName;
     private readonly HashSet<string> CompletedActionIds = new(StringComparer.OrdinalIgnoreCase);
 
     private string Money(decimal value) => $"{Portfolio.Terms.Currency} {value:N0}";
@@ -1022,6 +1075,75 @@
                 IntegrationOutbox.Publish("BorrowingBase.NoAvailability", line.ClientName, $"{line.ClientName} has {Money(line.Availability)} available after current base and advances.", "Microsoft Teams");
             }
         }
+    }
+
+    private void CreateClientOffer()
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        selectedOfferClientName ??= Portfolio.Clients.FirstOrDefault()?.Name;
+        if (string.IsNullOrWhiteSpace(selectedOfferClientName)) return;
+
+        var offer = ClientOffers.CreateOffer(Portfolio, selectedOfferClientName, UserContext.CurrentUser.DisplayName);
+        if (offer is null)
+        {
+            clientOfferMessage = "No eligible submitted, review or approved invoices for selected client.";
+            return;
+        }
+
+        clientOfferMessage = $"{offer.OfferNumber}: {offer.InvoiceCount} invoice(s), net cash {Money(offer.NetCash)}.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = offer.OfferNumber,
+            Action = "Offer created",
+            Detail = $"{offer.ClientName} / {Money(offer.NetCash)} net cash"
+        });
+        IntegrationOutbox.Publish("ClientOffer.Created", offer.OfferNumber, $"{offer.ClientName} offer created for {offer.InvoiceCount} invoice(s).", "Dynamics 365");
+    }
+
+    private void SendClientOffer(ClientOffer offer)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        ClientOffers.Send(offer);
+        clientOfferMessage = $"{offer.OfferNumber} sent to {offer.SentToEmail}.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = offer.OfferNumber,
+            Action = "Offer sent",
+            Detail = $"Portal token {offer.PortalToken}"
+        });
+        IntegrationOutbox.Publish("ClientOffer.Sent", offer.OfferNumber, $"Offer sent to {offer.SentToEmail}.", "Outlook");
+    }
+
+    private void AcceptClientOffer(ClientOffer offer)
+    {
+        ClientOffers.Accept(Portfolio, offer, UserContext.CurrentUser.DisplayName);
+        clientOfferMessage = $"{offer.OfferNumber} accepted.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = offer.OfferNumber,
+            Action = "Offer accepted",
+            Detail = $"{offer.ClientName} accepted {Money(offer.NetCash)} net cash."
+        });
+        IntegrationOutbox.Publish("ClientOffer.Accepted", offer.OfferNumber, $"{offer.ClientName} accepted offer in portal.", "Dynamics 365");
+    }
+
+    private void DeclineClientOffer(ClientOffer offer)
+    {
+        ClientOffers.Decline(offer, UserContext.CurrentUser.DisplayName);
+        clientOfferMessage = $"{offer.OfferNumber} declined.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = offer.OfferNumber,
+            Action = "Offer declined",
+            Detail = offer.Notes
+        });
+        IntegrationOutbox.Publish("ClientOffer.Declined", offer.OfferNumber, $"{offer.ClientName} declined offer.", "Dynamics 365");
     }
 
     private void CompleteAction(ActionItem item)
@@ -1545,6 +1667,15 @@
         FraudSignalSeverity.High => "fraud-severity high",
         FraudSignalSeverity.Medium => "fraud-severity medium",
         _ => "fraud-severity low"
+    };
+
+    private static string ClientOfferStatusClass(ClientOfferStatus status) => status switch
+    {
+        ClientOfferStatus.Accepted => "offer-status accepted",
+        ClientOfferStatus.Declined => "offer-status declined",
+        ClientOfferStatus.Expired => "offer-status expired",
+        ClientOfferStatus.Sent => "offer-status sent",
+        _ => "offer-status draft"
     };
 
     private static string UnderwritingLabel(UnderwritingDecisionStatus status) => status switch
