@@ -9,6 +9,7 @@ public enum ReportKind
     Ledger,
     BorrowingBase,
     Applications,
+    EvmLedger,
     Payments,
     Disputes,
     Confirmations,

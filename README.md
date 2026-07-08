@@ -36,6 +36,7 @@ The default development URLs are:
 - Funding workflow stages from draft through settlement.
 - Funding batch creation for approved invoices, including gross receivables, advance, fees, reserve and net cash.
 - Funding ledger for advances, fees, reserve held, debtor payments, reserve release and chargebacks.
+- EVM blockchain ledger for every receivable buy/sell action, including chain id, contract address, payload hash, transaction hash and confirmation status.
 - Client offer portal workflow with offer creation, send, acceptance, decline, expiry, portal token, dedicated `/portal/{token}` page and transparent fee metrics.
 - Document checklist for each invoice, including invoice, PO/contract, proof of delivery, debtor confirmation, KYC, and notice of assignment.
 - Document readiness metrics and reviewer notes.
@@ -54,12 +55,12 @@ The default development URLs are:
 - Payment reconciliation CSV import for matched, partial and unmatched remittances.
 - Dispute and dilution management for open disputes, credit notes, resolution and chargeback paths.
 - Persistence foundation with repository contract, SQL Server schema, connection string and conditional EF Core setup.
-- SQL schema coverage for terms/risk policy, action items, integration events, generated templates and covenant snapshots.
+- SQL schema coverage for terms/risk policy, EVM trade events, action items, integration events, generated templates and covenant snapshots.
 - Auth-ready user and role model with Client, Underwriter, Operations and Admin personas.
 - Role-based UI actions for funding submission, underwriting and collections operations.
 - AI-ready risk memo panel with local deterministic recommendation, strengths, risks and conditions.
 - Document intelligence abstraction with local metadata extraction, ready to swap for Azure AI Document Intelligence.
-- Reporting/export center with portfolio, exposure, applications, collections, underwriting, ledger, borrowing-base, payments, disputes, confirmations and fraud CSV reports.
+- Reporting/export center with portfolio, exposure, applications, EVM ledger, collections, underwriting, ledger, borrowing-base, payments, disputes, confirmations and fraud CSV reports.
 - Debtor confirmation workflow with sent/confirmed/disputed responses and automatic document readiness updates.
 - Integration outbox for Microsoft Teams, Outlook, Power Automate, Power BI and Azure AI Document Intelligence events.
 - Template center for funding offers, notices of assignment, debtor confirmations and collection reminders.
@@ -88,6 +89,8 @@ The default development URLs are:
 - `POST /api/invoices/import`
 - `GET /api/ledger`
 - `GET /api/borrowing-base`
+- `GET /api/evm/trades`
+- `POST /api/evm/trades/{eventId}/confirm`
 - `POST /api/funding-batches/create`
 - `POST /api/payments/reconcile`
 - `POST /api/disputes/open/{invoiceNumber}`

@@ -175,6 +175,30 @@ CREATE TABLE FundingBatches (
     InvoiceNumbers nvarchar(2000) NOT NULL
 );
 
+CREATE TABLE EvmTradeEvents (
+    EventId nvarchar(64) NOT NULL CONSTRAINT PK_EvmTradeEvents PRIMARY KEY,
+    CreatedAt datetime2 NOT NULL,
+    Action nvarchar(80) NOT NULL,
+    Status nvarchar(40) NOT NULL,
+    ChainId int NOT NULL,
+    NetworkName nvarchar(80) NOT NULL,
+    ContractAddress nvarchar(80) NOT NULL,
+    InvoiceNumber nvarchar(80) NOT NULL,
+    ClientName nvarchar(200) NOT NULL,
+    Debtor nvarchar(200) NOT NULL,
+    Counterparty nvarchar(200) NOT NULL,
+    Reference nvarchar(160) NOT NULL,
+    Amount decimal(18,2) NOT NULL,
+    Currency nvarchar(10) NOT NULL,
+    Actor nvarchar(160) NOT NULL,
+    PayloadHash nvarchar(80) NOT NULL,
+    TransactionHash nvarchar(80) NOT NULL,
+    SubmittedAt datetime2 NULL,
+    ConfirmedAt datetime2 NULL,
+    Note nvarchar(1000) NOT NULL,
+    CONSTRAINT FK_EvmTradeEvents_Invoices FOREIGN KEY (InvoiceNumber) REFERENCES Invoices(InvoiceNumber)
+);
+
 CREATE TABLE BorrowingBaseSnapshots (
     Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_BorrowingBaseSnapshots PRIMARY KEY,
     CapturedAt datetime2 NOT NULL CONSTRAINT DF_BorrowingBaseSnapshots_CapturedAt DEFAULT SYSUTCDATETIME(),
@@ -269,6 +293,9 @@ CREATE INDEX IX_DebtorConfirmationRequests_InvoiceNumber ON DebtorConfirmationRe
 CREATE INDEX IX_LedgerEntries_InvoiceNumber ON LedgerEntries(InvoiceNumber);
 CREATE INDEX IX_LedgerEntries_PostedAt ON LedgerEntries(PostedAt DESC);
 CREATE INDEX IX_FundingBatches_CreatedAt ON FundingBatches(CreatedAt DESC);
+CREATE INDEX IX_EvmTradeEvents_InvoiceNumber ON EvmTradeEvents(InvoiceNumber);
+CREATE INDEX IX_EvmTradeEvents_Status ON EvmTradeEvents(Status);
+CREATE INDEX IX_EvmTradeEvents_TransactionHash ON EvmTradeEvents(TransactionHash);
 CREATE INDEX IX_BorrowingBaseSnapshots_ClientName ON BorrowingBaseSnapshots(ClientName);
 CREATE INDEX IX_BorrowingBaseSnapshots_CapturedAt ON BorrowingBaseSnapshots(CapturedAt DESC);
 CREATE INDEX IX_AuditEvents_OccurredAt ON AuditEvents(OccurredAt DESC);

@@ -4,6 +4,7 @@
 @using FactorLab.Web.Services
 @inject IPortfolioRepository Portfolio
 @inject IClientOfferService ClientOffers
+@inject IEvmLedgerService EvmLedger
 @inject IIntegrationOutboxService IntegrationOutbox
 
 <PageTitle>Client offer</PageTitle>
@@ -135,8 +136,10 @@ else
         if (Offer is null) return;
 
         ClientOffers.Accept(Portfolio, Offer, "Client portal");
+        var evmEvents = EvmLedger.RecordOfferAcceptance(Portfolio, Offer, "Client portal");
         portalMessage = "Offer accepted. Operations can now prepare funding.";
         IntegrationOutbox.Publish("ClientPortal.Accepted", Offer.OfferNumber, $"{Offer.ClientName} accepted the offer from portal.", "Dynamics 365");
+        IntegrationOutbox.Publish("Evm.SellReceivable", Offer.OfferNumber, $"{evmEvents.Count} sell transaction(s) submitted to EVM.", "EVM RPC");
     }
 
     private void DeclineOffer()

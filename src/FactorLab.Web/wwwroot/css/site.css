@@ -1604,6 +1604,81 @@ th {
     gap: 12px;
 }
 
+.evm-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.evm-card {
+    display: grid;
+    min-height: 198px;
+    align-content: space-between;
+    gap: 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 14px;
+}
+
+.evm-card p,
+.evm-card small {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.evm-card small {
+    font-weight: 750;
+}
+
+.evm-hashes {
+    display: grid;
+    gap: 5px;
+}
+
+.evm-hashes span {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--muted);
+    padding: 6px 8px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.evm-status {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.evm-status.queued {
+    background: #eef2ed;
+    color: var(--muted);
+}
+
+.evm-status.submitted {
+    background: #e7eff8;
+    color: var(--accent-2);
+}
+
+.evm-status.confirmed {
+    background: #e7f3e8;
+    color: var(--good);
+}
+
+.evm-status.failed {
+    background: #fde7e7;
+    color: var(--danger);
+}
+
 .payment-match-card {
     display: grid;
     min-height: 148px;
@@ -1948,6 +2023,7 @@ pre {
     .workflow-grid,
     .aging-grid,
     .ledger-metrics,
+    .evm-grid,
     .batch-grid,
     .payment-match-grid,
     .dispute-grid,

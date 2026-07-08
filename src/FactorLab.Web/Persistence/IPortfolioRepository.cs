@@ -15,6 +15,7 @@ public interface IPortfolioRepository
     List<CollectionActivity> CollectionActivities { get; }
     List<FundingBatch> FundingBatches { get; }
     List<ClientOffer> ClientOffers { get; }
+    List<EvmTradeEvent> EvmTradeEvents { get; }
     List<PaymentMatch> PaymentMatches { get; }
     List<DisputeCase> DisputeCases { get; }
     List<DebtorConfirmationRequest> DebtorConfirmations { get; }

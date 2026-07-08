@@ -40,6 +40,7 @@ builder.Services.AddSingleton<IDebtorConfirmationService, DebtorConfirmationServ
 builder.Services.AddSingleton<IFraudSignalService, FraudSignalService>();
 builder.Services.AddSingleton<IClientOfferService, ClientOfferService>();
 builder.Services.AddSingleton<IFacilityApplicationService, FacilityApplicationService>();
+builder.Services.AddSingleton<IEvmLedgerService, LocalEvmLedgerService>();
 #if ENABLE_EFCORE
 builder.Services.AddDbContext<FactorLabDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("FactorLabSql")));
@@ -145,7 +146,7 @@ app.MapGet("/api/borrowing-base", (IPortfolioRepository portfolio, IBorrowingBas
     });
 });
 
-app.MapPost("/api/funding-batches/create", (IPortfolioRepository portfolio, IFundingBatchService batches, IIntegrationOutboxService outbox) =>
+app.MapPost("/api/funding-batches/create", (IPortfolioRepository portfolio, IFundingBatchService batches, IEvmLedgerService evmLedger, IIntegrationOutboxService outbox) =>
 {
     var batch = batches.CreateApprovedBatch(portfolio, portfolio.Terms, "API");
     if (batch is null)
@@ -153,7 +154,9 @@ app.MapPost("/api/funding-batches/create", (IPortfolioRepository portfolio, IFun
         return Results.BadRequest(new { Error = "No approved invoices available for funding." });
     }
 
+    var evmEvents = evmLedger.RecordFundingBatch(portfolio, batch, "API");
     outbox.Publish("FundingBatch.Created", batch.BatchNumber, $"{batch.InvoiceCount} invoice(s) funded for {batch.Currency} {batch.NetCash:N2} net cash.", "Power Automate");
+    outbox.Publish("Evm.BuyReceivable", batch.BatchNumber, $"{evmEvents.Count} buy transaction(s) submitted to EVM.", "EVM RPC");
     return Results.Ok(batch);
 });
 
@@ -237,6 +240,21 @@ app.MapGet("/api/fraud-signals", (IPortfolioRepository portfolio, IFraudSignalSe
 app.MapGet("/api/client-offers", (IPortfolioRepository portfolio) =>
     Results.Ok(portfolio.ClientOffers));
 
+app.MapGet("/api/evm/trades", (IPortfolioRepository portfolio) =>
+    Results.Ok(portfolio.EvmTradeEvents.OrderByDescending(item => item.CreatedAt)));
+
+app.MapPost("/api/evm/trades/{eventId}/confirm", (string eventId, IPortfolioRepository portfolio, IEvmLedgerService evmLedger) =>
+{
+    var tradeEvent = portfolio.EvmTradeEvents.FirstOrDefault(item => item.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase));
+    if (tradeEvent is null)
+    {
+        return Results.NotFound(new { Error = "EVM trade event not found." });
+    }
+
+    evmLedger.MarkConfirmed(tradeEvent);
+    return Results.Ok(tradeEvent);
+});
+
 app.MapGet("/api/facility-applications", (IPortfolioRepository portfolio) =>
     Results.Ok(portfolio.FacilityApplications));
 
@@ -298,7 +316,7 @@ app.MapPost("/api/client-offers/create/{clientName}", (string clientName, IPortf
     return Results.Ok(offer);
 });
 
-app.MapPost("/api/client-offers/accept/{offerNumber}", (string offerNumber, IPortfolioRepository portfolio, IClientOfferService offers, IIntegrationOutboxService outbox) =>
+app.MapPost("/api/client-offers/accept/{offerNumber}", (string offerNumber, IPortfolioRepository portfolio, IClientOfferService offers, IEvmLedgerService evmLedger, IIntegrationOutboxService outbox) =>
 {
     var offer = portfolio.ClientOffers.FirstOrDefault(item => item.OfferNumber.Equals(offerNumber, StringComparison.OrdinalIgnoreCase));
     if (offer is null)
@@ -307,7 +325,9 @@ app.MapPost("/api/client-offers/accept/{offerNumber}", (string offerNumber, IPor
     }
 
     offers.Accept(portfolio, offer, "Client portal");
+    var evmEvents = evmLedger.RecordOfferAcceptance(portfolio, offer, "Client portal");
     outbox.Publish("ClientOffer.Accepted", offer.OfferNumber, $"{offer.ClientName} accepted {offer.NetCash:N2} net cash offer.", "Dynamics 365");
+    outbox.Publish("Evm.SellReceivable", offer.OfferNumber, $"{evmEvents.Count} sell transaction(s) submitted to EVM.", "EVM RPC");
     return Results.Ok(offer);
 });
 

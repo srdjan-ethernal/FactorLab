@@ -22,6 +22,7 @@ public sealed class FactorLabDbContext : DbContext
     public DbSet<DebtorConfirmationRequest> DebtorConfirmationRequests => Set<DebtorConfirmationRequest>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
     public DbSet<FundingBatch> FundingBatches => Set<FundingBatch>();
+    public DbSet<EvmTradeEvent> EvmTradeEvents => Set<EvmTradeEvent>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<IntegrationEvent> IntegrationEvents => Set<IntegrationEvent>();
 
@@ -39,6 +40,7 @@ public sealed class FactorLabDbContext : DbContext
         modelBuilder.Entity<DebtorConfirmationRequest>().HasKey("Id");
         modelBuilder.Entity<LedgerEntry>().HasKey("Id");
         modelBuilder.Entity<FundingBatch>().HasKey("Id");
+        modelBuilder.Entity<EvmTradeEvent>().HasKey(item => item.EventId);
         modelBuilder.Entity<AuditEvent>().HasKey("Id");
         modelBuilder.Entity<IntegrationEvent>().HasKey(item => item.Id);
 
@@ -66,6 +68,9 @@ public sealed class FactorLabDbContext : DbContext
         modelBuilder.Entity<FundingBatch>().Property(item => item.EstimatedFees).HasPrecision(18, 2);
         modelBuilder.Entity<FundingBatch>().Property(item => item.ReserveHeld).HasPrecision(18, 2);
         modelBuilder.Entity<FundingBatch>().Property(item => item.NetCash).HasPrecision(18, 2);
+        modelBuilder.Entity<EvmTradeEvent>().Property(item => item.Action).HasConversion<string>();
+        modelBuilder.Entity<EvmTradeEvent>().Property(item => item.Status).HasConversion<string>();
+        modelBuilder.Entity<EvmTradeEvent>().Property(item => item.Amount).HasPrecision(18, 2);
         modelBuilder.Entity<IntegrationEvent>().Property(item => item.Status).HasConversion<string>();
 
         modelBuilder.Entity<Invoice>().Ignore(invoice => invoice.Documents);

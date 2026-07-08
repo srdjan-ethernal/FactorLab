@@ -25,6 +25,7 @@
 @inject IFraudSignalService FraudSignals
 @inject IClientOfferService ClientOffers
 @inject IFacilityApplicationService FacilityApplications
+@inject IEvmLedgerService EvmLedger
 @inject IJSRuntime JsRuntime
 
 <PageTitle>FactorLab</PageTitle>
@@ -329,6 +330,42 @@
                 <strong>@Money(batch.NetCash)</strong>
                 <p>@batch.InvoiceCount invoice(s) / gross @Money(batch.GrossReceivables) / reserve @Money(batch.ReserveHeld)</p>
                 <small>@batch.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm") / @batch.CreatedBy</small>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">EVM blockchain</p>
+            <h2>Buy and sell transaction ledger</h2>
+            @if (!string.IsNullOrWhiteSpace(evmLedgerMessage))
+            {
+                <small class="inline-status">@evmLedgerMessage</small>
+            }
+        </div>
+        <span class="status-pill">@Portfolio.EvmTradeEvents.Count transaction(s)</span>
+    </div>
+    <div class="evm-grid">
+        @foreach (var tradeEvent in Portfolio.EvmTradeEvents.OrderByDescending(item => item.CreatedAt).Take(8))
+        {
+            <article class="evm-card">
+                <div class="integration-head">
+                    <span class="@EvmStatusClass(tradeEvent.Status)">@tradeEvent.Status</span>
+                    <span>@tradeEvent.NetworkName / @tradeEvent.ChainId</span>
+                </div>
+                <strong>@EvmActionLabel(tradeEvent.Action)</strong>
+                <p>@tradeEvent.InvoiceNumber / @tradeEvent.ClientName / @Money(tradeEvent.Amount)</p>
+                <div class="evm-hashes">
+                    <span>payload @ShortHash(tradeEvent.PayloadHash)</span>
+                    <span>tx @ShortHash(tradeEvent.TransactionHash)</span>
+                </div>
+                <small>@tradeEvent.Reference / @tradeEvent.Counterparty</small>
+                <div class="collection-actions">
+                    <button class="secondary-action" disabled="@(tradeEvent.Status == EvmTransactionStatus.Confirmed)" @onclick="() => SubmitEvmTrade(tradeEvent)">Submit</button>
+                    <button class="secondary-action" disabled="@(tradeEvent.Status == EvmTransactionStatus.Confirmed)" @onclick="() => ConfirmEvmTrade(tradeEvent)">Confirm</button>
+                </div>
             </article>
         }
     </div>
@@ -1064,6 +1101,7 @@
     private string paymentReconciliationMessage = "";
     private string clientOfferMessage = "";
     private string facilityApplicationMessage = "";
+    private string evmLedgerMessage = "";
     private string? selectedOfferClientName;
     private string newApplicationLegalName = "Nova Trade d.o.o.";
     private string newApplicationEmail = "finance@nova-trade.example";
@@ -1263,6 +1301,7 @@
     private void AcceptClientOffer(ClientOffer offer)
     {
         ClientOffers.Accept(Portfolio, offer, UserContext.CurrentUser.DisplayName);
+        var evmEvents = EvmLedger.RecordOfferAcceptance(Portfolio, offer, UserContext.CurrentUser.DisplayName);
         clientOfferMessage = $"{offer.OfferNumber} accepted.";
         Portfolio.AuditEvents.Add(new AuditEvent
         {
@@ -1272,6 +1311,7 @@
             Detail = $"{offer.ClientName} accepted {Money(offer.NetCash)} net cash."
         });
         IntegrationOutbox.Publish("ClientOffer.Accepted", offer.OfferNumber, $"{offer.ClientName} accepted offer in portal.", "Dynamics 365");
+        IntegrationOutbox.Publish("Evm.SellReceivable", offer.OfferNumber, $"{evmEvents.Count} sell transaction(s) submitted to EVM.", "EVM RPC");
     }
 
     private void DeclineClientOffer(ClientOffer offer)
@@ -1336,6 +1376,7 @@
         }
 
         fundingBatchMessage = $"{batch.BatchNumber}: {batch.InvoiceCount} invoice(s), net cash {Money(batch.NetCash)}.";
+        var evmEvents = EvmLedger.RecordFundingBatch(Portfolio, batch, UserContext.CurrentUser.DisplayName);
         Portfolio.AuditEvents.Add(new AuditEvent
         {
             Actor = UserContext.CurrentUser.DisplayName,
@@ -1344,6 +1385,21 @@
             Detail = $"{batch.InvoiceCount} invoice(s) funded: {batch.InvoiceNumbers}"
         });
         IntegrationOutbox.Publish("FundingBatch.Created", batch.BatchNumber, fundingBatchMessage, "Power Automate");
+        IntegrationOutbox.Publish("Evm.BuyReceivable", batch.BatchNumber, $"{evmEvents.Count} buy transaction(s) submitted to EVM.", "EVM RPC");
+    }
+
+    private void SubmitEvmTrade(EvmTradeEvent tradeEvent)
+    {
+        EvmLedger.MarkSubmitted(tradeEvent);
+        evmLedgerMessage = $"{tradeEvent.InvoiceNumber} submitted to {tradeEvent.NetworkName}.";
+        IntegrationOutbox.Publish("Evm.TransactionSubmitted", tradeEvent.InvoiceNumber, $"{tradeEvent.TransactionHash} submitted.", "EVM RPC");
+    }
+
+    private void ConfirmEvmTrade(EvmTradeEvent tradeEvent)
+    {
+        EvmLedger.MarkConfirmed(tradeEvent);
+        evmLedgerMessage = $"{tradeEvent.InvoiceNumber} confirmed on {tradeEvent.NetworkName}.";
+        IntegrationOutbox.Publish("Evm.TransactionConfirmed", tradeEvent.InvoiceNumber, $"{tradeEvent.TransactionHash} confirmed.", "EVM RPC");
     }
 
     private async Task ReconcilePaymentCsv(InputFileChangeEventArgs eventArgs)
@@ -1689,6 +1745,7 @@
         ReportKind.Ledger => $"{FundingLedger.BuildLedger(Portfolio, Portfolio.Terms).Count} entries",
         ReportKind.BorrowingBase => $"{BorrowingBase.Build(Portfolio, Portfolio.Terms).Count} clients",
         ReportKind.Applications => $"{Portfolio.FacilityApplications.Count} applications",
+        ReportKind.EvmLedger => $"{Portfolio.EvmTradeEvents.Count} txs",
         ReportKind.Payments => $"{Portfolio.PaymentMatches.Count} matches",
         ReportKind.Disputes => $"{Portfolio.DisputeCases.Count} cases",
         ReportKind.Confirmations => $"{Portfolio.DebtorConfirmations.Count} requests",
@@ -1705,6 +1762,7 @@
         ReportKind.Ledger => "Ledger report",
         ReportKind.BorrowingBase => "Borrowing base",
         ReportKind.Applications => "Applications report",
+        ReportKind.EvmLedger => "EVM ledger",
         ReportKind.Payments => "Payments report",
         ReportKind.Disputes => "Disputes report",
         ReportKind.Confirmations => "Confirmations report",
@@ -1721,6 +1779,7 @@
         ReportKind.Ledger => "Advance, fee, reserve, payment, reserve release and chargeback entries.",
         ReportKind.BorrowingBase => "Client availability after eligibility, concentration, debtor limits and existing advances.",
         ReportKind.Applications => "Facility requests, turnover, debtor count, risk score, status and approved limits.",
+        ReportKind.EvmLedger => "Buy and sell events with chain id, contract, payload hash and transaction hash.",
         ReportKind.Payments => "Imported remittance references, match status, invoice, debtor and amount.",
         ReportKind.Disputes => "Open disputes, credit notes, chargebacks, owners and next actions.",
         ReportKind.Confirmations => "Debtor confirmation requests, response status, deadlines and notes.",
@@ -1822,6 +1881,25 @@
         ClientOfferStatus.Sent => "offer-status sent",
         _ => "offer-status draft"
     };
+
+    private static string EvmStatusClass(EvmTransactionStatus status) => status switch
+    {
+        EvmTransactionStatus.Confirmed => "evm-status confirmed",
+        EvmTransactionStatus.Submitted => "evm-status submitted",
+        EvmTransactionStatus.Failed => "evm-status failed",
+        _ => "evm-status queued"
+    };
+
+    private static string EvmActionLabel(EvmTradeAction action) => action switch
+    {
+        EvmTradeAction.BuyReceivable => "Buy receivable",
+        EvmTradeAction.SellReceivable => "Sell receivable",
+        EvmTradeAction.SellParticipation => "Sell participation",
+        _ => action.ToString()
+    };
+
+    private static string ShortHash(string hash) =>
+        string.IsNullOrWhiteSpace(hash) || hash.Length <= 14 ? hash : $"{hash[..10]}...{hash[^6..]}";
 
     private static string FacilityApplicationStatusClass(FacilityApplicationStatus status) => status switch
     {

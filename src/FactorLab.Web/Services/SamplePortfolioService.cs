@@ -106,6 +106,28 @@ public sealed class SamplePortfolioService : IPortfolioRepository
         }
     };
 
+    public List<EvmTradeEvent> EvmTradeEvents { get; } = new()
+    {
+        new EvmTradeEvent
+        {
+            Action = EvmTradeAction.SellReceivable,
+            Status = EvmTransactionStatus.Confirmed,
+            InvoiceNumber = "INV-2026-1042",
+            ClientName = "Balkan Components d.o.o.",
+            Debtor = "Adriatic Retail Group",
+            Counterparty = "FactorLab SPV",
+            Reference = "OFR-2026-0001",
+            Amount = 42000m,
+            Currency = "EUR",
+            Actor = "Client portal",
+            PayloadHash = "0xf5baf3b2462fc15df5c4adf0d1b06f88d7b35d62a8b94a5d8e8ecda2e0b59d31",
+            TransactionHash = "0x9b3d1cb98951c1c7e995d43b3f1fbb5f57c2c86c3373efc0773ce357cc13a901",
+            SubmittedAt = DateTime.UtcNow.AddHours(-5),
+            ConfirmedAt = DateTime.UtcNow.AddHours(-4),
+            Note = "Demo confirmed EVM sale event."
+        }
+    };
+
     public List<PaymentMatch> PaymentMatches { get; } = new()
     {
         new PaymentMatch { Reference = "BANK-20260706-001", InvoiceNumber = "INV-2026-1083", Debtor = "GreenGrid Energy", Amount = 87000m, Currency = "EUR", Status = PaymentMatchStatus.Matched, Note = "Sample payment already matched." }

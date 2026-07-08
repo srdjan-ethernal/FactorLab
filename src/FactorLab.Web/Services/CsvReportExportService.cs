@@ -30,6 +30,7 @@ public sealed class CsvReportExportService : IReportExportService
             ReportKind.Ledger => Build("factorlab-ledger.csv", LedgerRows(portfolio, terms)),
             ReportKind.BorrowingBase => Build("factorlab-borrowing-base.csv", BorrowingBaseRows(portfolio, terms)),
             ReportKind.Applications => Build("factorlab-facility-applications.csv", ApplicationRows(portfolio)),
+            ReportKind.EvmLedger => Build("factorlab-evm-ledger.csv", EvmRows(portfolio)),
             ReportKind.Payments => Build("factorlab-payments.csv", PaymentRows(portfolio)),
             ReportKind.Disputes => Build("factorlab-disputes.csv", DisputeRows(portfolio)),
             ReportKind.Confirmations => Build("factorlab-confirmations.csv", ConfirmationRows(portfolio)),
@@ -234,6 +235,36 @@ public sealed class CsvReportExportService : IReportExportService
                 application.DecisionNote,
                 application.SubmittedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 application.ReviewedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? ""
+            };
+        }
+    }
+
+    private static IEnumerable<string[]> EvmRows(IPortfolioRepository portfolio)
+    {
+        yield return new[] { "CreatedAt", "Action", "Status", "ChainId", "Network", "ContractAddress", "Invoice", "Client", "Debtor", "Counterparty", "Reference", "Amount", "Currency", "PayloadHash", "TransactionHash", "SubmittedAt", "ConfirmedAt", "Actor", "Note" };
+        foreach (var tradeEvent in portfolio.EvmTradeEvents)
+        {
+            yield return new[]
+            {
+                tradeEvent.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                tradeEvent.Action.ToString(),
+                tradeEvent.Status.ToString(),
+                tradeEvent.ChainId.ToString(CultureInfo.InvariantCulture),
+                tradeEvent.NetworkName,
+                tradeEvent.ContractAddress,
+                tradeEvent.InvoiceNumber,
+                tradeEvent.ClientName,
+                tradeEvent.Debtor,
+                tradeEvent.Counterparty,
+                tradeEvent.Reference,
+                Money(tradeEvent.Amount),
+                tradeEvent.Currency,
+                tradeEvent.PayloadHash,
+                tradeEvent.TransactionHash,
+                tradeEvent.SubmittedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "",
+                tradeEvent.ConfirmedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "",
+                tradeEvent.Actor,
+                tradeEvent.Note
             };
         }
     }
