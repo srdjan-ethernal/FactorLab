@@ -1,0 +1,5 @@
+client,debtor,invoice,amount,days,rating,concentration,status,fundingStage
+Nordic Components AS,Metro Retail Group,INV-2026-2001,42500,42,A,18,clean,draft
+Nordic Components AS,Alpine Medical AG,INV-2026-2002,31800,55,B,22,unverified,draft
+Adria Foods DOO,GreenLine Logistics,INV-2026-2003,26750,36,B,16,clean,submitted
+Adria Foods DOO,East Market Chain,INV-2026-2004,51200,88,C,34,overdue,review

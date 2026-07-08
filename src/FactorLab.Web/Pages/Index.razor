@@ -1,0 +1,1658 @@
+@page "/"
+@using FactorLab.Web.Domain
+@using FactorLab.Web.Persistence
+@using FactorLab.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@inject FactorLab.Web.Services.FactoringCalculator Calculator
+@inject IPortfolioRepository Portfolio
+@inject CurrentUserService UserContext
+@inject IDocumentStorageService DocumentStorage
+@inject IRiskMemoService RiskMemoService
+@inject IDocumentExtractionService DocumentExtraction
+@inject IReportExportService ReportExport
+@inject IActionCenterService ActionCenter
+@inject IIntegrationOutboxService IntegrationOutbox
+@inject ITemplateGenerationService TemplateGeneration
+@inject IPortfolioMonitoringService PortfolioMonitoring
+@inject IInvoiceImportService InvoiceImport
+@inject IFundingLedgerService FundingLedger
+@inject IBorrowingBaseService BorrowingBase
+@inject IFundingBatchService FundingBatchService
+@inject IPaymentReconciliationService PaymentReconciliation
+@inject IDisputeService DisputeService
+@inject IDebtorConfirmationService DebtorConfirmationService
+@inject IFraudSignalService FraudSignals
+@inject IJSRuntime JsRuntime
+
+<PageTitle>FactorLab</PageTitle>
+
+@{
+    var terms = Portfolio.Terms;
+    var invoices = Portfolio.Invoices;
+    var summary = Calculator.Summarize(invoices, terms, Portfolio.Clients, Portfolio.Debtors);
+    var actionItems = ActionCenter.BuildQueue(Portfolio, terms, CompletedActionIds);
+    var myActionItems = actionItems.Where(item => UserContext.CurrentUser.Role == UserRole.Admin || item.OwnerRole == UserContext.CurrentUser.Role).ToArray();
+    var covenantChecks = PortfolioMonitoring.BuildChecks(Portfolio, terms);
+    var ledgerEntries = FundingLedger.BuildLedger(Portfolio, terms);
+    var ledgerSummary = FundingLedger.Summarize(ledgerEntries);
+    var borrowingBaseLines = BorrowingBase.Build(Portfolio, terms);
+    var borrowingBaseSummary = BorrowingBase.Summarize(borrowingBaseLines);
+    var fraudSignals = FraudSignals.Detect(Portfolio);
+}
+
+<section class="workspace-header">
+    <div>
+        <p class="eyebrow">Invoice factoring workspace</p>
+        <h1>FactorLab</h1>
+    </div>
+    <div class="user-tools">
+        <span class="@RoleBadgeClass(UserContext.CurrentUser.Role)">@UserContext.CurrentUser.Role</span>
+        <select value="@UserContext.CurrentUser.Email" @onchange="SwitchUser">
+            @foreach (var user in UserContext.Users)
+            {
+                <option value="@user.Email">@user.DisplayName</option>
+            }
+        </select>
+        <button class="primary-action" disabled="@(!UserContext.CanSubmitFunding)" @onclick="SubmitEligible">Submit eligible</button>
+    </div>
+</section>
+
+<section class="metric-grid">
+    <article class="metric-card">
+        <span>Eligible invoices</span>
+        <strong>@Money(summary.EligibleAmount)</strong>
+        <small>@summary.EligibleCount of @invoices.Count invoices</small>
+    </article>
+    <article class="metric-card">
+        <span>Cash available today</span>
+        <strong>@Money(summary.CashToday)</strong>
+        <small>@terms.AdvanceRate.ToString("0")% advance</small>
+    </article>
+    <article class="metric-card">
+        <span>Estimated total cost</span>
+        <strong>@Money(summary.TotalCost)</strong>
+        <small>@summary.EffectiveApr.ToString("0.0")% effective APR</small>
+    </article>
+    <article class="metric-card">
+        <span>Portfolio quality</span>
+        <strong>@summary.PortfolioQuality</strong>
+        <small>@QualityLabel(summary.PortfolioQuality)</small>
+    </article>
+    <article class="metric-card">
+        <span>Document readiness</span>
+        <strong>@summary.DocumentReadyCount/@invoices.Count</strong>
+        <small>@summary.MissingRequiredDocuments missing required docs</small>
+    </article>
+</section>
+
+<section class="panel action-panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Action center</p>
+            <h2>Priority work queue</h2>
+        </div>
+        <span class="status-pill">@myActionItems.Length assigned to @UserContext.CurrentUser.Role</span>
+    </div>
+    <div class="action-grid">
+        @foreach (var item in actionItems)
+        {
+            var canComplete = UserContext.CurrentUser.Role == UserRole.Admin || item.OwnerRole == UserContext.CurrentUser.Role;
+            <article class="action-card">
+                <div class="action-card-head">
+                    <span class="@ActionPriorityClass(item.Priority)">@item.Priority</span>
+                    <span class="@RoleBadgeClass(item.OwnerRole)">@item.OwnerRole</span>
+                </div>
+                <strong>@item.Title</strong>
+                <p>@item.Detail</p>
+                <div class="action-meta">
+                    <span>@item.Category</span>
+                    <span>@item.RelatedEntity</span>
+                    <span>Due @item.DueAt.ToString("MMM d")</span>
+                </div>
+                <button class="secondary-action" disabled="@(!canComplete)" @onclick="() => CompleteAction(item)">Complete</button>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Debtor verification</p>
+            <h2>Confirmation workflow</h2>
+        </div>
+        <span class="status-pill">@Portfolio.DebtorConfirmations.Count(item => item.Status == DebtorConfirmationStatus.Sent) pending</span>
+    </div>
+    <div class="confirmation-grid">
+        @foreach (var request in Portfolio.DebtorConfirmations.OrderByDescending(item => item.CreatedAt).Take(6))
+        {
+            <article class="confirmation-card">
+                <div class="integration-head">
+                    <span class="@ConfirmationStatusClass(request.Status)">@request.Status</span>
+                    <span>@request.RequestNumber</span>
+                </div>
+                <strong>@request.InvoiceNumber / @request.Debtor</strong>
+                <p>@request.ResponseNote</p>
+                <div class="action-meta">
+                    <span>Due @request.DueAt.ToString("MMM d")</span>
+                    <span>@request.SentBy</span>
+                </div>
+                <div class="collection-actions">
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => ConfirmDebtorRequest(request)">Confirmed</button>
+                    <button class="danger-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => DisputeDebtorRequest(request)">Disputed</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Dilution</p>
+            <h2>Dispute cases</h2>
+        </div>
+        <span class="status-pill">@Portfolio.DisputeCases.Count(item => item.Status is not DisputeStatus.Resolved and not DisputeStatus.ChargedBack) open</span>
+    </div>
+    <div class="dispute-grid">
+        @foreach (var dispute in Portfolio.DisputeCases.OrderByDescending(item => item.OpenedAt).Take(6))
+        {
+            <article class="dispute-card">
+                <div class="integration-head">
+                    <span class="@DisputeStatusClass(dispute.Status)">@dispute.Status</span>
+                    <span>@dispute.CaseNumber</span>
+                </div>
+                <strong>@dispute.InvoiceNumber / @Money(dispute.DisputedAmount)</strong>
+                <p>@dispute.Reason</p>
+                <div class="action-meta">
+                    <span>Credit @Money(dispute.CreditNoteAmount)</span>
+                    <span>@dispute.Owner</span>
+                </div>
+                <div class="collection-actions">
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => ResolveDispute(dispute, false)">Resolve</button>
+                    <button class="danger-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => ResolveDispute(dispute, true)">Chargeback</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Payments</p>
+            <h2>Reconciliation matches</h2>
+        </div>
+        <span class="status-pill">@Portfolio.PaymentMatches.Count matches</span>
+    </div>
+    <div class="payment-match-grid">
+        @foreach (var match in Portfolio.PaymentMatches.OrderByDescending(item => item.ReceivedAt).Take(6))
+        {
+            <article class="payment-match-card">
+                <div class="integration-head">
+                    <span class="@PaymentMatchClass(match.Status)">@match.Status</span>
+                    <span>@match.Reference</span>
+                </div>
+                <strong>@Money(match.Amount)</strong>
+                <p>@match.InvoiceNumber / @match.Debtor</p>
+                <small>@match.Note</small>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Funding operations</p>
+            <h2>Funding batches</h2>
+            @if (!string.IsNullOrWhiteSpace(fundingBatchMessage))
+            {
+                <small class="inline-status">@fundingBatchMessage</small>
+            }
+        </div>
+        <button class="primary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="CreateFundingBatch">Fund approved</button>
+    </div>
+    <div class="batch-grid">
+        @foreach (var batch in Portfolio.FundingBatches.OrderByDescending(item => item.CreatedAt).Take(4))
+        {
+            <article class="batch-card">
+                <span>@batch.BatchNumber</span>
+                <strong>@Money(batch.NetCash)</strong>
+                <p>@batch.InvoiceCount invoice(s) / gross @Money(batch.GrossReceivables) / reserve @Money(batch.ReserveHeld)</p>
+                <small>@batch.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm") / @batch.CreatedBy</small>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Funding ledger</p>
+            <h2>Cash and reserve movements</h2>
+        </div>
+        <span class="status-pill">@ledgerEntries.Count entries</span>
+    </div>
+    <div class="ledger-metrics">
+        <article>
+            <span>Advances</span>
+            <strong>@Money(ledgerSummary.Advances)</strong>
+        </article>
+        <article>
+            <span>Fees</span>
+            <strong>@Money(ledgerSummary.Fees)</strong>
+        </article>
+        <article>
+            <span>Reserve held</span>
+            <strong>@Money(ledgerSummary.ReserveHeld)</strong>
+        </article>
+        <article>
+            <span>Payments</span>
+            <strong>@Money(ledgerSummary.PaymentsReceived)</strong>
+        </article>
+        <article>
+            <span>Net outstanding</span>
+            <strong>@Money(ledgerSummary.NetOutstanding)</strong>
+        </article>
+    </div>
+    <div class="ledger-list">
+        @foreach (var entry in ledgerEntries.Take(8))
+        {
+            <div class="ledger-row">
+                <span>@entry.EntryType</span>
+                <strong>@entry.InvoiceNumber</strong>
+                <p>@entry.ClientName / @entry.Debtor / @entry.Note</p>
+                <b>@Money(entry.Debit - entry.Credit)</b>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Monitoring</p>
+            <h2>Portfolio covenants</h2>
+        </div>
+        <span class="status-pill">@covenantChecks.Count(item => item.Status != CovenantStatus.Pass) exceptions</span>
+    </div>
+    <div class="covenant-grid">
+        @foreach (var check in covenantChecks.Take(8))
+        {
+            <article class="covenant-card">
+                <div class="integration-head">
+                    <span class="@CovenantStatusClass(check.Status)">@check.Status</span>
+                    <span>@check.Scope</span>
+                </div>
+                <strong>@check.Name</strong>
+                <p>@check.Action</p>
+                <div class="action-meta">
+                    <span>@check.Metric</span>
+                    <span>@check.Threshold</span>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Borrowing base</p>
+            <h2>Availability by client</h2>
+        </div>
+        <span class="status-pill">@Money(borrowingBaseSummary.Availability) available</span>
+    </div>
+    <div class="availability-strip">
+        <article>
+            <span>Gross AR</span>
+            <strong>@Money(borrowingBaseSummary.GrossReceivables)</strong>
+        </article>
+        <article>
+            <span>Eligible AR</span>
+            <strong>@Money(borrowingBaseSummary.EligibleReceivables)</strong>
+        </article>
+        <article>
+            <span>Borrowing base</span>
+            <strong>@Money(borrowingBaseSummary.BorrowingBase)</strong>
+        </article>
+        <article>
+            <span>Max advance</span>
+            <strong>@Money(borrowingBaseSummary.MaxAdvance)</strong>
+        </article>
+        <article>
+            <span>Existing advance</span>
+            <strong>@Money(borrowingBaseSummary.ExistingAdvance)</strong>
+        </article>
+    </div>
+    <div class="availability-table">
+        @foreach (var line in borrowingBaseLines)
+        {
+            <div class="availability-row">
+                <strong>@line.ClientName</strong>
+                <span>@line.Status</span>
+                <span>Eligible @Money(line.EligibleReceivables)</span>
+                <span>Excess @Money(line.ConcentrationExcess + line.DebtorLimitExcess)</span>
+                <b>@Money(line.Availability)</b>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Fraud controls</p>
+            <h2>Anomaly signals</h2>
+        </div>
+        <span class="status-pill">@fraudSignals.Count(item => item.Severity >= FraudSignalSeverity.High) high risk</span>
+    </div>
+    <div class="fraud-grid">
+        @foreach (var signal in fraudSignals.Take(8))
+        {
+            <article class="fraud-card">
+                <div class="integration-head">
+                    <span class="@FraudSeverityClass(signal.Severity)">@signal.Severity</span>
+                    <span>@signal.Entity</span>
+                </div>
+                <strong>@signal.SignalType</strong>
+                <p>@signal.Detail</p>
+                <small>@signal.RecommendedAction</small>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="content-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Pricing</p>
+                <h2>Deal terms</h2>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>Currency <input @bind="terms.Currency" /></label>
+            <label>Advance rate <input type="number" @bind="terms.AdvanceRate" /></label>
+            <label>Discount fee / 30d <input type="number" step="0.05" @bind="terms.DiscountRatePer30Days" /></label>
+            <label>Service fee <input type="number" step="0.05" @bind="terms.ServiceFeeRate" /></label>
+            <label>Minimum fee <input type="number" @bind="terms.MinimumFee" /></label>
+            <label>Bank APR compare <input type="number" step="0.1" @bind="terms.BankApr" /></label>
+        </div>
+        <label class="toggle-line">
+            <input type="checkbox" @bind="terms.IsNonRecourse" />
+            Non-recourse pricing
+        </label>
+        <div class="policy-divider"></div>
+        <div class="form-grid">
+            <label>Minimum score <input type="number" @bind="terms.RiskPolicy.MinimumScore" /></label>
+            <label>Max tenor days <input type="number" @bind="terms.RiskPolicy.MaximumTenorDays" /></label>
+            <label>Long tenor review <input type="number" @bind="terms.RiskPolicy.LongTenorReviewDays" /></label>
+            <label>Concentration warning <input type="number" step="0.5" @bind="terms.RiskPolicy.ConcentrationWarningPercent" /></label>
+            <label>Facility warning % <input type="number" step="1" @bind="terms.RiskPolicy.FacilityWarningUtilizationPercent" /></label>
+            <label>Credit warning % <input type="number" step="1" @bind="terms.RiskPolicy.CreditWarningUtilizationPercent" /></label>
+            <label>High dilution % <input type="number" step="0.5" @bind="terms.RiskPolicy.HighDilutionPercent" /></label>
+            <label>Slow payment days <input type="number" @bind="terms.RiskPolicy.SlowPaymentDays" /></label>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Workflow</p>
+                <h2>Funding pipeline</h2>
+            </div>
+            <span class="status-pill">@ActiveCount() active</span>
+        </div>
+        <div class="workflow-grid">
+            @foreach (var stage in Enum.GetValues<FundingStage>())
+            {
+                var stageInvoices = invoices.Where(invoice => invoice.FundingStage == stage).ToArray();
+                <div class="workflow-card">
+                    <span>@StageLabel(stage)</span>
+                    <strong>@stageInvoices.Length</strong>
+                    <small>@Money(stageInvoices.Sum(invoice => invoice.Amount))</small>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Documents</p>
+            <h2>Template center</h2>
+        </div>
+        <select class="memo-select" @bind="selectedTemplateInvoiceNumber">
+            @foreach (var invoice in invoices)
+            {
+                <option value="@invoice.InvoiceNumber">@invoice.InvoiceNumber / @invoice.Debtor</option>
+            }
+        </select>
+    </div>
+    <div class="template-grid">
+        @foreach (var templateKind in Enum.GetValues<TemplateKind>())
+        {
+            <article class="template-card">
+                <span>@TemplateLabel(templateKind)</span>
+                <strong>@TemplateAudience(templateKind)</strong>
+                <p>@TemplateDescription(templateKind)</p>
+                <button class="secondary-action" @onclick="() => DownloadTemplate(templateKind)">Download TXT</button>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Microsoft integrations</p>
+            <h2>Integration outbox</h2>
+        </div>
+        <span class="status-pill">@IntegrationOutbox.Events.Count(item => item.Status == IntegrationEventStatus.Pending) pending</span>
+    </div>
+    <div class="integration-grid">
+        @foreach (var item in IntegrationOutbox.Events.Take(6))
+        {
+            <article class="integration-card">
+                <div class="integration-head">
+                    <span class="@IntegrationStatusClass(item.Status)">@item.Status</span>
+                    <span>@item.Target</span>
+                </div>
+                <strong>@item.EventType</strong>
+                <p>@item.Summary</p>
+                <div class="action-meta">
+                    <span>@item.Entity</span>
+                    <span>@item.OccurredAt.ToLocalTime().ToString("MMM d HH:mm")</span>
+                    <span>@item.Attempts attempts</span>
+                </div>
+                <div class="collection-actions">
+                    <button class="secondary-action" @onclick="() => IntegrationOutbox.Retry(item.Id)">Retry</button>
+                    <button class="secondary-action" @onclick="() => IntegrationOutbox.MarkDelivered(item.Id)">Mark delivered</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Reports</p>
+            <h2>Export center</h2>
+        </div>
+        <span class="status-pill">CSV ready</span>
+    </div>
+    <div class="report-grid">
+        @foreach (var report in Enum.GetValues<ReportKind>())
+        {
+            <article class="report-card">
+                <span>@ReportLabel(report)</span>
+                <strong>@ReportMetric(report)</strong>
+                <p>@ReportDescription(report)</p>
+                <button class="secondary-action" @onclick="() => ExportReport(report)">Download CSV</button>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Invoice book</p>
+            <h2>Receivables</h2>
+            @if (!string.IsNullOrWhiteSpace(importStatusMessage))
+            {
+                <small class="inline-status">@importStatusMessage</small>
+            }
+        </div>
+        <div class="heading-actions">
+            <label class="file-action">
+                Import CSV
+                <InputFile OnChange="ImportInvoiceCsv" />
+            </label>
+            <button class="secondary-action" @onclick="AddInvoice">Add invoice</button>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Debtor</th>
+                    <th>Client</th>
+                    <th>Invoice no.</th>
+                    <th>Amount</th>
+                    <th>Days</th>
+                    <th>Rating</th>
+                    <th>Concentration</th>
+                    <th>Status</th>
+                    <th>Workflow</th>
+                    <th>Score</th>
+                    <th>Docs</th>
+                    <th>Eligibility</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var invoice in invoices)
+                {
+                    var decision = Decide(invoice);
+                    var docStatus = DocumentStatusLabel(invoice);
+                    <tr>
+                        <td><input @bind="invoice.Debtor" /></td>
+                        <td>
+                            <select @bind="invoice.ClientName">
+                                @foreach (var client in Portfolio.Clients)
+                                {
+                                    <option value="@client.Name">@client.Name</option>
+                                }
+                            </select>
+                        </td>
+                        <td><input @bind="invoice.InvoiceNumber" /></td>
+                        <td><input type="number" @bind="invoice.Amount" /></td>
+                        <td><input type="number" @bind="invoice.DaysToPay" /></td>
+                        <td>
+                            <select @bind="invoice.Rating">
+                                @foreach (var rating in Enum.GetValues<DebtorRating>())
+                                {
+                                    <option value="@rating">@rating</option>
+                                }
+                            </select>
+                        </td>
+                        <td><input type="number" @bind="invoice.ConcentrationPercent" /></td>
+                        <td>
+                            <select @bind="invoice.Status">
+                                @foreach (var status in Enum.GetValues<InvoiceStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <select @bind="invoice.FundingStage">
+                                @foreach (var stage in Enum.GetValues<FundingStage>())
+                                {
+                                    <option value="@stage">@stage</option>
+                                }
+                            </select>
+                        </td>
+                        <td><span class="@ScoreClass(decision.Score)">@decision.Score</span></td>
+                        <td><span class="@DocumentBadgeClass(invoice)">@docStatus</span></td>
+                        <td>
+                            <div class="reason-list">
+                                @foreach (var reason in decision.Reasons)
+                                {
+                                    <span class="@ReasonClass(reason, decision)">@reason</span>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Documents</p>
+            <h2>Funding checklist</h2>
+        </div>
+        <span class="status-pill">@summary.MissingRequiredDocuments missing</span>
+    </div>
+    <div class="document-grid">
+        @foreach (var invoice in invoices)
+        {
+            <article class="document-card">
+                <div class="document-card-head">
+                    <div>
+                        <strong>@invoice.InvoiceNumber</strong>
+                        <span>@invoice.Debtor</span>
+                    </div>
+                    <span class="@DocumentBadgeClass(invoice)">@DocumentStatusLabel(invoice)</span>
+                </div>
+                <div class="document-list">
+                    @foreach (var document in invoice.Documents)
+                    {
+                        <div class="document-row">
+                            <label class="document-toggle">
+                                <input type="checkbox" checked="@document.IsSatisfied" @onchange="eventArgs => ToggleDocument(document, eventArgs)" />
+                                <span>@DocumentChecklistFactory.Label(document.Kind)</span>
+                            </label>
+                            <select @bind="document.Status">
+                                @foreach (var status in Enum.GetValues<DocumentStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                            <InputFile disabled="@(!CanUploadDocuments())" OnChange="eventArgs => UploadDocument(invoice, document, eventArgs)" />
+                            <input placeholder="Reviewer note" @bind="document.ReviewerNote" />
+                            <small class="document-meta">@DocumentMeta(document)</small>
+                        </div>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="profile-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Clients</p>
+                <h2>Facility exposure</h2>
+            </div>
+        </div>
+        <div class="profile-list">
+            @foreach (var client in Portfolio.Clients)
+            {
+                var exposure = Calculator.ClientExposure(invoices, client.Name);
+                var utilization = client.FacilityLimit > 0 ? exposure / client.FacilityLimit * 100m : 0m;
+                <div class="profile-card">
+                    <div class="profile-head">
+                        <div>
+                            <strong>@client.Name</strong>
+                            <span>@client.Industry / @client.Country</span>
+                        </div>
+                        <span class="@DecisionBadgeClass(client.BuyDecision)">@client.BuyDecision</span>
+                    </div>
+                    <div class="limit-row">
+                        <span>Exposure</span>
+                        <b>@Money(exposure)</b>
+                    </div>
+                    <div class="limit-track"><span style="width: @LimitWidth(utilization)"></span></div>
+                    <div class="limit-meta">
+                        <span>@utilization.ToString("0")% of @Money(client.FacilityLimit)</span>
+                        <span>@client.KycStatus</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Debtors</p>
+                <h2>Credit limits</h2>
+            </div>
+        </div>
+        <div class="profile-list">
+            @foreach (var debtor in Portfolio.Debtors)
+            {
+                var exposure = Calculator.DebtorExposure(invoices, debtor.Name);
+                var utilization = debtor.CreditLimit > 0 ? exposure / debtor.CreditLimit * 100m : 0m;
+                <div class="profile-card">
+                    <div class="profile-head">
+                        <div>
+                            <strong>@debtor.Name</strong>
+                            <span>@debtor.Sector / @debtor.Country</span>
+                        </div>
+                        <span class="@DecisionBadgeClass(debtor.BuyDecision)">@debtor.BuyDecision</span>
+                    </div>
+                    <div class="limit-row">
+                        <span>Exposure</span>
+                        <b>@Money(exposure)</b>
+                    </div>
+                    <div class="limit-track"><span style="width: @LimitWidth(utilization)"></span></div>
+                    <div class="limit-meta">
+                        <span>@utilization.ToString("0")% of @Money(debtor.CreditLimit)</span>
+                        <span>@debtor.Rating / @debtor.AverageDaysToPay days</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Underwriting</p>
+            <h2>Approval desk</h2>
+        </div>
+        <span class="status-pill">@PendingUnderwritingCount() pending</span>
+    </div>
+    <div class="underwriting-list">
+        @foreach (var invoice in invoices.Where(invoice => invoice.FundingStage != FundingStage.Settled))
+        {
+            var decision = Decide(invoice);
+            var underwriting = Portfolio.DecisionFor(invoice.InvoiceNumber);
+            <article class="underwriting-card">
+                <div class="underwriting-head">
+                    <div>
+                        <strong>@invoice.InvoiceNumber</strong>
+                        <span>@invoice.ClientName / @invoice.Debtor</span>
+                    </div>
+                    <span class="@UnderwritingBadgeClass(underwriting.Status)">@UnderwritingLabel(underwriting.Status)</span>
+                </div>
+                <div class="underwriting-facts">
+                    <span>Score <b>@decision.Score</b></span>
+                    <span>Docs <b>@DocumentStatusLabel(invoice)</b></span>
+                    <span>Assigned <b>@underwriting.AssignedTo</b></span>
+                    <span>Stage <b>@invoice.FundingStage</b></span>
+                </div>
+                <div class="underwriting-reasons">
+                    @foreach (var reason in decision.Reasons)
+                    {
+                        <span class="@ReasonClass(reason, decision)">@reason</span>
+                    }
+                </div>
+                <div class="underwriting-form">
+                    <input placeholder="Decision note" @bind="underwriting.DecisionNote" />
+                    <input placeholder="Conditions" @bind="underwriting.Conditions" />
+                </div>
+                <div class="underwriting-actions">
+                    <button class="secondary-action" disabled="@(!UserContext.CanUnderwrite)" @onclick="() => SetDecision(invoice, UnderwritingDecisionStatus.Approved)">Approve</button>
+                    <button class="secondary-action" disabled="@(!UserContext.CanUnderwrite)" @onclick="() => SetDecision(invoice, UnderwritingDecisionStatus.ApprovedWithConditions)">Condition</button>
+                    <button class="danger-action" disabled="@(!UserContext.CanUnderwrite)" @onclick="() => SetDecision(invoice, UnderwritingDecisionStatus.Declined)">Decline</button>
+                    <button class="warning-action" disabled="@(!UserContext.CanUnderwrite)" @onclick="() => SetDecision(invoice, UnderwritingDecisionStatus.OverrideApproved)">Override</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Audit</p>
+            <h2>Decision trail</h2>
+        </div>
+    </div>
+    <div class="audit-list">
+        @foreach (var auditEvent in Portfolio.AuditEvents.OrderByDescending(item => item.OccurredAt).Take(8))
+        {
+            <div class="audit-row">
+                <span>@auditEvent.OccurredAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                <strong>@auditEvent.Action</strong>
+                <p>@auditEvent.Entity / @auditEvent.Actor / @auditEvent.Detail</p>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">AI-ready</p>
+            <h2>Risk memo</h2>
+        </div>
+        <select class="memo-select" @bind="selectedMemoInvoiceNumber">
+            @foreach (var invoice in invoices)
+            {
+                <option value="@invoice.InvoiceNumber">@invoice.InvoiceNumber / @invoice.Debtor</option>
+            }
+        </select>
+    </div>
+    @{
+        var memoInvoice = SelectedMemoInvoice();
+        if (memoInvoice is not null)
+        {
+            var memo = RiskMemoService.Generate(memoInvoice, Portfolio, terms);
+            var extracted = ExtractFirstDocument(memoInvoice);
+            <div class="memo-grid">
+                <article class="memo-card">
+                    <span>Recommendation</span>
+                    <strong>@memo.Recommendation</strong>
+                    <p>@memo.ExecutiveSummary</p>
+                    <small>Generated @memo.GeneratedAt.ToLocalTime().ToString("dd MMM HH:mm")</small>
+                </article>
+                <article class="memo-card">
+                    <span>Document intelligence</span>
+                    <strong>@(extracted.IsAvailable ? "Metadata ready" : "Waiting for upload")</strong>
+                    <p>@extracted.Summary</p>
+                    @foreach (var field in extracted.Fields)
+                    {
+                        <small>@field.Key: @field.Value</small>
+                    }
+                </article>
+            </div>
+            <div class="memo-columns">
+                <div>
+                    <h3>Strengths</h3>
+                    @foreach (var item in memo.Strengths)
+                    {
+                        <span class="memo-chip strength">@item</span>
+                    }
+                </div>
+                <div>
+                    <h3>Risks</h3>
+                    @foreach (var item in memo.Risks)
+                    {
+                        <span class="memo-chip risk">@item</span>
+                    }
+                </div>
+                <div>
+                    <h3>Conditions</h3>
+                    @foreach (var item in memo.Conditions)
+                    {
+                        <span class="memo-chip condition">@item</span>
+                    }
+                </div>
+            </div>
+        }
+    }
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Collections</p>
+            <h2>Aging pipeline</h2>
+            @if (!string.IsNullOrWhiteSpace(paymentReconciliationMessage))
+            {
+                <small class="inline-status">@paymentReconciliationMessage</small>
+            }
+        </div>
+        <div class="heading-actions">
+            <label class="file-action">
+                Reconcile CSV
+                <InputFile disabled="@(!UserContext.CanOperateCollections)" OnChange="ReconcilePaymentCsv" />
+            </label>
+            <span class="status-pill">@OverdueCount() overdue</span>
+        </div>
+    </div>
+    <div class="aging-grid">
+        @foreach (var bucket in AgingBuckets())
+        {
+            <article class="aging-card">
+                <span>@bucket.Label</span>
+                <strong>@bucket.Count</strong>
+                <small>@Money(bucket.Amount)</small>
+            </article>
+        }
+    </div>
+    <div class="collections-list">
+        @foreach (var invoice in invoices)
+        {
+            var collectionCase = Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+            <article class="collection-card">
+                <div class="collection-head">
+                    <div>
+                        <strong>@invoice.InvoiceNumber</strong>
+                        <span>@invoice.Debtor / due @collectionCase.DueDate.ToString("dd MMM yyyy")</span>
+                    </div>
+                    <span class="@CollectionBadgeClass(collectionCase.Status)">@CollectionLabel(collectionCase.Status)</span>
+                </div>
+                <div class="collection-facts">
+                    <span>Amount <b>@Money(invoice.Amount)</b></span>
+                    <span>Paid <b>@Money(collectionCase.AmountPaid)</b></span>
+                    <span>Reserve <b>@Money(collectionCase.ReserveReleased)</b></span>
+                    <span>DPD <b>@collectionCase.DaysPastDue</b></span>
+                </div>
+                <div class="collection-form">
+                    <input placeholder="Owner" @bind="collectionCase.Owner" />
+                    <input placeholder="Next action" @bind="collectionCase.NextAction" />
+                </div>
+                <div class="collection-actions">
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => LogCollection(invoice, CollectionActivityType.Email)">Email</button>
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => SendDebtorConfirmation(invoice)">Confirm</button>
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => LogCollection(invoice, CollectionActivityType.Call)">Call</button>
+                    <button class="warning-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => SetPromiseToPay(invoice)">Promise</button>
+                    <button class="secondary-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => MarkPaid(invoice)">Mark paid</button>
+                    <button class="warning-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => OpenDispute(invoice)">Dispute</button>
+                    <button class="danger-action" disabled="@(!UserContext.CanOperateCollections)" @onclick="() => Chargeback(invoice)">Chargeback</button>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Collections log</p>
+            <h2>Contact history</h2>
+        </div>
+    </div>
+    <div class="audit-list">
+        @foreach (var activity in Portfolio.CollectionActivities.OrderByDescending(item => item.OccurredAt).Take(10))
+        {
+            <div class="audit-row">
+                <span>@activity.OccurredAt.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                <strong>@activity.ActivityType</strong>
+                <p>@activity.InvoiceNumber / @activity.ContactName / @activity.Note</p>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="insight-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Risk</p>
+                <h2>Underwriting signals</h2>
+            </div>
+        </div>
+        <ul class="signal-list">
+            @foreach (var signal in Signals())
+            {
+                <li>@signal</li>
+            }
+        </ul>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Offer</p>
+                <h2>Indicative term sheet</h2>
+            </div>
+        </div>
+        <pre>@TermSheet(summary)</pre>
+    </article>
+</section>
+
+@code {
+    private string? selectedMemoInvoiceNumber;
+    private string? selectedTemplateInvoiceNumber;
+    private string importStatusMessage = "";
+    private string fundingBatchMessage = "";
+    private string paymentReconciliationMessage = "";
+    private readonly HashSet<string> CompletedActionIds = new(StringComparer.OrdinalIgnoreCase);
+
+    private string Money(decimal value) => $"{Portfolio.Terms.Currency} {value:N0}";
+
+    private void SwitchUser(ChangeEventArgs eventArgs)
+    {
+        UserContext.SwitchTo(Convert.ToString(eventArgs.Value) ?? "");
+    }
+
+    private Invoice? SelectedMemoInvoice()
+    {
+        selectedMemoInvoiceNumber ??= Portfolio.Invoices.FirstOrDefault()?.InvoiceNumber;
+        return Portfolio.Invoices.FirstOrDefault(invoice => invoice.InvoiceNumber == selectedMemoInvoiceNumber);
+    }
+
+    private Invoice? SelectedTemplateInvoice()
+    {
+        selectedTemplateInvoiceNumber ??= Portfolio.Invoices.FirstOrDefault()?.InvoiceNumber;
+        return Portfolio.Invoices.FirstOrDefault(invoice => invoice.InvoiceNumber == selectedTemplateInvoiceNumber);
+    }
+
+    private DocumentExtractionResult ExtractFirstDocument(Invoice invoice)
+    {
+        var document = invoice.Documents.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.FileName))
+            ?? invoice.Documents.FirstOrDefault();
+        return document is null
+            ? new DocumentExtractionResult { IsAvailable = false, Summary = "No checklist item available." }
+            : DocumentExtraction.Extract(document);
+    }
+
+    private bool CanUploadDocuments() =>
+        UserContext.CurrentUser.Role is UserRole.Client or UserRole.Underwriter or UserRole.Admin;
+
+    private static string QualityLabel(int score) =>
+        score >= 75 ? "Strong" : score >= 55 ? "Watchlist" : score > 0 ? "High risk" : "No data";
+
+    private static string StageLabel(FundingStage stage) => stage switch
+    {
+        FundingStage.Review => "Review",
+        _ => stage.ToString()
+    };
+
+    private int ActiveCount() =>
+        Portfolio.Invoices.Count(invoice => invoice.FundingStage != FundingStage.Draft && invoice.FundingStage != FundingStage.Settled);
+
+    private void SubmitEligible()
+    {
+        var submitted = 0;
+        foreach (var invoice in Portfolio.Invoices)
+        {
+            if (!UserContext.CanSubmitFunding) return;
+
+            if (invoice.FundingStage == FundingStage.Draft && Decide(invoice).IsEligible)
+            {
+                invoice.FundingStage = FundingStage.Submitted;
+                submitted++;
+            }
+        }
+
+        if (submitted > 0)
+        {
+            IntegrationOutbox.Publish("Funding.Submitted", "Portfolio", $"{submitted} eligible invoice(s) submitted for underwriting.", "Power Automate");
+            foreach (var line in BorrowingBase.Build(Portfolio, Portfolio.Terms).Where(line => line.Availability <= 0m))
+            {
+                IntegrationOutbox.Publish("BorrowingBase.NoAvailability", line.ClientName, $"{line.ClientName} has {Money(line.Availability)} available after current base and advances.", "Microsoft Teams");
+            }
+        }
+    }
+
+    private void CompleteAction(ActionItem item)
+    {
+        if (UserContext.CurrentUser.Role != UserRole.Admin && UserContext.CurrentUser.Role != item.OwnerRole) return;
+
+        CompletedActionIds.Add(item.Id);
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = item.RelatedEntity,
+            Action = "Action completed",
+            Detail = $"{item.Title}: {item.Detail}"
+        });
+        IntegrationOutbox.Publish("Action.Completed", item.RelatedEntity, item.Title, "Microsoft Teams");
+    }
+
+    private async Task ImportInvoiceCsv(InputFileChangeEventArgs eventArgs)
+    {
+        var file = eventArgs.File;
+        using var stream = file.OpenReadStream(1024 * 1024);
+        using var reader = new StreamReader(stream);
+        var csv = await reader.ReadToEndAsync();
+        var result = InvoiceImport.Import(csv, Portfolio);
+        importStatusMessage = result.HasErrors
+            ? $"Imported {result.Added} added / {result.Updated} updated with {result.Errors.Count} issue(s)."
+            : $"Imported {result.Added} added / {result.Updated} updated.";
+
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = file.Name,
+            Action = "CSV imported",
+            Detail = importStatusMessage
+        });
+        IntegrationOutbox.Publish("InvoiceBook.Imported", "Portfolio", importStatusMessage, "Power Automate");
+    }
+
+    private void CreateFundingBatch()
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var batch = FundingBatchService.CreateApprovedBatch(Portfolio, Portfolio.Terms, UserContext.CurrentUser.DisplayName);
+        if (batch is null)
+        {
+            fundingBatchMessage = "No approved invoices available for funding.";
+            return;
+        }
+
+        fundingBatchMessage = $"{batch.BatchNumber}: {batch.InvoiceCount} invoice(s), net cash {Money(batch.NetCash)}.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = batch.BatchNumber,
+            Action = "Funding batch created",
+            Detail = $"{batch.InvoiceCount} invoice(s) funded: {batch.InvoiceNumbers}"
+        });
+        IntegrationOutbox.Publish("FundingBatch.Created", batch.BatchNumber, fundingBatchMessage, "Power Automate");
+    }
+
+    private async Task ReconcilePaymentCsv(InputFileChangeEventArgs eventArgs)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var file = eventArgs.File;
+        using var stream = file.OpenReadStream(1024 * 1024);
+        using var reader = new StreamReader(stream);
+        var csv = await reader.ReadToEndAsync();
+        var result = PaymentReconciliation.Reconcile(csv, Portfolio);
+        paymentReconciliationMessage = result.HasErrors
+            ? $"{result.Matched} matched / {result.Partial} partial / {result.Unmatched} unmatched with {result.Errors.Count} issue(s)."
+            : $"{result.Matched} matched / {result.Partial} partial / {result.Unmatched} unmatched.";
+
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = file.Name,
+            Action = "Payments reconciled",
+            Detail = paymentReconciliationMessage
+        });
+        IntegrationOutbox.Publish("Payments.Reconciled", "Portfolio", paymentReconciliationMessage, "Power Automate");
+    }
+
+    private void AddInvoice()
+    {
+        var invoice = new Invoice
+        {
+            ClientName = Portfolio.Clients.FirstOrDefault()?.Name ?? "",
+            Debtor = "New debtor",
+            InvoiceNumber = $"INV-{DateTime.UtcNow.Year}-{Portfolio.Invoices.Count + 1:0000}",
+            Amount = 10000m,
+            DaysToPay = 45,
+            Rating = DebtorRating.B,
+            ConcentrationPercent = 20m,
+            Status = InvoiceStatus.Clean,
+            FundingStage = FundingStage.Draft
+        };
+        invoice.Documents.AddRange(DocumentChecklistFactory.CreateDefault());
+        foreach (var document in invoice.Documents)
+        {
+            document.InvoiceNumber = invoice.InvoiceNumber;
+        }
+        Portfolio.Invoices.Add(invoice);
+        Portfolio.DecisionFor(invoice.InvoiceNumber);
+        Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+        Portfolio.AuditEvents.Add(new AuditEvent { Actor = "System", Entity = invoice.InvoiceNumber, Action = "Created", Detail = "Draft invoice added to underwriting queue." });
+        IntegrationOutbox.Publish("Invoice.Created", invoice.InvoiceNumber, $"{invoice.ClientName} added {Money(invoice.Amount)} receivable.", "Power Automate");
+    }
+
+    private int PendingUnderwritingCount() =>
+        Portfolio.UnderwritingDecisions.Count(decision => decision.Status == UnderwritingDecisionStatus.Pending);
+
+    private void SetDecision(Invoice invoice, UnderwritingDecisionStatus status)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        var decision = Portfolio.DecisionFor(invoice.InvoiceNumber);
+        decision.Status = status;
+        decision.DecidedAt = DateTime.UtcNow;
+        decision.IsManualOverride = status == UnderwritingDecisionStatus.OverrideApproved;
+        decision.AssignedTo = UserContext.CurrentUser.DisplayName;
+
+        invoice.FundingStage = status switch
+        {
+            UnderwritingDecisionStatus.Approved => FundingStage.Approved,
+            UnderwritingDecisionStatus.OverrideApproved => FundingStage.Approved,
+            UnderwritingDecisionStatus.ApprovedWithConditions => FundingStage.Review,
+            UnderwritingDecisionStatus.Declined => FundingStage.Draft,
+            _ => invoice.FundingStage
+        };
+
+        var action = status switch
+        {
+            UnderwritingDecisionStatus.Approved => "Approved",
+            UnderwritingDecisionStatus.ApprovedWithConditions => "Conditioned",
+            UnderwritingDecisionStatus.Declined => "Declined",
+            UnderwritingDecisionStatus.OverrideApproved => "Override approved",
+            _ => "Updated"
+        };
+
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = decision.AssignedTo,
+            Entity = invoice.InvoiceNumber,
+            Action = action,
+            Detail = string.IsNullOrWhiteSpace(decision.DecisionNote) ? "Decision updated from underwriting desk." : decision.DecisionNote
+        });
+        IntegrationOutbox.Publish("Underwriting.Decision", invoice.InvoiceNumber, $"{action}: {invoice.Debtor} / {Money(invoice.Amount)}.", "Microsoft Teams");
+    }
+
+    private int OverdueCount() =>
+        Portfolio.CollectionCases.Count(item => item.Status is CollectionStatus.Overdue or CollectionStatus.Chargeback || item.DaysPastDue > 0 && item.Status != CollectionStatus.Paid);
+
+    private IEnumerable<(string Label, int Count, decimal Amount)> AgingBuckets()
+    {
+        var joined = Portfolio.CollectionCases
+            .Select(item => new { Case = item, Invoice = Portfolio.Invoices.FirstOrDefault(invoice => invoice.InvoiceNumber == item.InvoiceNumber) })
+            .Where(item => item.Invoice is not null)
+            .ToArray();
+
+        yield return ("Not due", joined.Count(item => item.Case.DaysPastDue == 0 && item.Case.Status != CollectionStatus.Paid), joined.Where(item => item.Case.DaysPastDue == 0 && item.Case.Status != CollectionStatus.Paid).Sum(item => item.Invoice!.Amount));
+        yield return ("1-15 DPD", joined.Count(item => item.Case.DaysPastDue is >= 1 and <= 15), joined.Where(item => item.Case.DaysPastDue is >= 1 and <= 15).Sum(item => item.Invoice!.Amount));
+        yield return ("16-45 DPD", joined.Count(item => item.Case.DaysPastDue is >= 16 and <= 45), joined.Where(item => item.Case.DaysPastDue is >= 16 and <= 45).Sum(item => item.Invoice!.Amount));
+        yield return ("45+ DPD", joined.Count(item => item.Case.DaysPastDue > 45), joined.Where(item => item.Case.DaysPastDue > 45).Sum(item => item.Invoice!.Amount));
+        yield return ("Paid", joined.Count(item => item.Case.Status == CollectionStatus.Paid), joined.Where(item => item.Case.Status == CollectionStatus.Paid).Sum(item => item.Invoice!.Amount));
+    }
+
+    private void LogCollection(Invoice invoice, CollectionActivityType activityType)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var collectionCase = Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+        collectionCase.NextAction = activityType == CollectionActivityType.Email ? "Wait for debtor response" : "Follow up after call";
+        Portfolio.CollectionActivities.Add(new CollectionActivity
+        {
+            InvoiceNumber = invoice.InvoiceNumber,
+            ActivityType = activityType,
+            ContactName = invoice.Debtor,
+            Note = activityType == CollectionActivityType.Email ? "Payment reminder sent." : "Collection call logged."
+        });
+        IntegrationOutbox.Publish("Collections.ContactLogged", invoice.InvoiceNumber, $"{activityType} logged for {invoice.Debtor}.", "Outlook");
+    }
+
+    private void SetPromiseToPay(Invoice invoice)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var collectionCase = Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+        collectionCase.Status = CollectionStatus.PromiseToPay;
+        collectionCase.PromiseToPayDate = DateTime.UtcNow.Date.AddDays(7);
+        collectionCase.NextAction = "Confirm promise-to-pay before due date";
+        Portfolio.CollectionActivities.Add(new CollectionActivity { InvoiceNumber = invoice.InvoiceNumber, ActivityType = CollectionActivityType.PromiseToPay, ContactName = invoice.Debtor, Note = "Promise-to-pay set for next 7 days." });
+        IntegrationOutbox.Publish("Collections.PromiseToPay", invoice.InvoiceNumber, $"{invoice.Debtor} promised payment within 7 days.", "Outlook");
+    }
+
+    private void SendDebtorConfirmation(Invoice invoice)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var request = DebtorConfirmationService.Send(Portfolio, invoice, UserContext.CurrentUser.DisplayName);
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = request.RequestNumber,
+            Action = "Confirmation sent",
+            Detail = $"{invoice.InvoiceNumber} sent to {invoice.Debtor}"
+        });
+        IntegrationOutbox.Publish("DebtorConfirmation.Sent", request.RequestNumber, $"{invoice.InvoiceNumber} confirmation sent to {invoice.Debtor}.", "Outlook");
+    }
+
+    private void ConfirmDebtorRequest(DebtorConfirmationRequest request)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        DebtorConfirmationService.Confirm(Portfolio, request, "Confirmed from operations desk.");
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = request.RequestNumber,
+            Action = "Debtor confirmed",
+            Detail = $"{request.InvoiceNumber} confirmed by {request.Debtor}"
+        });
+        IntegrationOutbox.Publish("DebtorConfirmation.Confirmed", request.RequestNumber, $"{request.InvoiceNumber} confirmed by debtor.", "Microsoft Teams");
+    }
+
+    private void DisputeDebtorRequest(DebtorConfirmationRequest request)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        DebtorConfirmationService.Dispute(Portfolio, request, "Debtor disputed during confirmation.", DisputeService, UserContext.CurrentUser.DisplayName);
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = request.RequestNumber,
+            Action = "Debtor disputed",
+            Detail = $"{request.InvoiceNumber} disputed by {request.Debtor}"
+        });
+        IntegrationOutbox.Publish("DebtorConfirmation.Disputed", request.RequestNumber, $"{request.InvoiceNumber} disputed by debtor.", "Microsoft Teams");
+    }
+
+    private void OpenDispute(Invoice invoice)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var dispute = DisputeService.Open(Portfolio, invoice, invoice.Amount, "Opened from collections desk.", UserContext.CurrentUser.DisplayName);
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = dispute.CaseNumber,
+            Action = "Dispute opened",
+            Detail = $"{invoice.InvoiceNumber} / {Money(dispute.DisputedAmount)}"
+        });
+        IntegrationOutbox.Publish("Dispute.Opened", dispute.CaseNumber, $"{invoice.InvoiceNumber} disputed for {Money(dispute.DisputedAmount)}.", "Microsoft Teams");
+    }
+
+    private void ResolveDispute(DisputeCase dispute, bool chargeback)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        DisputeService.Resolve(Portfolio, dispute, dispute.CreditNoteAmount, chargeback);
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = dispute.CaseNumber,
+            Action = chargeback ? "Dispute charged back" : "Dispute resolved",
+            Detail = $"{dispute.InvoiceNumber} / credit note {Money(dispute.CreditNoteAmount)}"
+        });
+        IntegrationOutbox.Publish(chargeback ? "Dispute.ChargedBack" : "Dispute.Resolved", dispute.CaseNumber, $"{dispute.InvoiceNumber} dispute updated.", "Microsoft Teams");
+    }
+
+    private void MarkPaid(Invoice invoice)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var collectionCase = Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+        collectionCase.Status = CollectionStatus.Paid;
+        collectionCase.AmountPaid = invoice.Amount;
+        collectionCase.ReserveReleased = Math.Max(0m, invoice.Amount * (100m - Portfolio.Terms.AdvanceRate) / 100m);
+        collectionCase.NextAction = "Reserve released and case ready to archive";
+        invoice.FundingStage = FundingStage.Collected;
+        Portfolio.CollectionActivities.Add(new CollectionActivity { InvoiceNumber = invoice.InvoiceNumber, ActivityType = CollectionActivityType.PaymentReceived, ContactName = invoice.Debtor, Note = "Payment matched to invoice." });
+        Portfolio.CollectionActivities.Add(new CollectionActivity { InvoiceNumber = invoice.InvoiceNumber, ActivityType = CollectionActivityType.ReserveReleased, ContactName = "Operations", Note = $"Reserve released: {Money(collectionCase.ReserveReleased)}." });
+        IntegrationOutbox.Publish("Collections.PaymentMatched", invoice.InvoiceNumber, $"{Money(invoice.Amount)} payment matched and reserve released.", "Power Automate");
+    }
+
+    private void Chargeback(Invoice invoice)
+    {
+        if (!UserContext.CanOperateCollections) return;
+
+        var collectionCase = Portfolio.CollectionCaseFor(invoice.InvoiceNumber);
+        collectionCase.Status = CollectionStatus.Chargeback;
+        collectionCase.ChargebackAmount = Math.Max(0m, invoice.Amount - collectionCase.AmountPaid);
+        collectionCase.NextAction = "Recover outstanding amount from client";
+        Portfolio.CollectionActivities.Add(new CollectionActivity { InvoiceNumber = invoice.InvoiceNumber, ActivityType = CollectionActivityType.Chargeback, ContactName = invoice.ClientName, Note = $"Chargeback opened: {Money(collectionCase.ChargebackAmount)}." });
+        IntegrationOutbox.Publish("Collections.ChargebackOpened", invoice.InvoiceNumber, $"{Money(collectionCase.ChargebackAmount)} chargeback opened for {invoice.ClientName}.", "Microsoft Teams");
+    }
+
+    private IEnumerable<string> Signals()
+    {
+        var decisions = Portfolio.Invoices.Select(Decide).ToArray();
+        var excluded = decisions.Count(decision => !decision.IsEligible);
+        yield return $"{Portfolio.Invoices.Count - excluded} invoices pass current eligibility rules.";
+        if (excluded > 0) yield return $"{excluded} invoices need review before funding.";
+        if (Portfolio.Invoices.Any(invoice => invoice.Status == InvoiceStatus.Disputed)) yield return "Disputed invoices are excluded from the offer.";
+        if (Portfolio.Invoices.Any(invoice => invoice.ConcentrationPercent > Portfolio.Terms.RiskPolicy.ConcentrationWarningPercent)) yield return "High debtor concentration requires underwriter review.";
+        if (Portfolio.Invoices.Any(invoice => invoice.DaysToPay > Portfolio.Terms.RiskPolicy.LongTenorReviewDays)) yield return "Long tenor invoices may need additional confirmation.";
+        if (Portfolio.Debtors.Any(debtor => debtor.BuyDecision == BuyDecision.NoBuy)) yield return "One debtor is marked no-buy and will block funding.";
+        if (Portfolio.Clients.Any(client => client.KycStatus == KycStatus.RefreshRequired)) yield return "One client needs KYC refresh before larger funding.";
+    }
+
+    private string TermSheet(FactoringSummary summary)
+    {
+        var rejected = Portfolio.Invoices.Where(invoice => !Decide(invoice).IsEligible).ToArray();
+        var lines = new List<string>
+        {
+            "INDICATIVE FACTORING TERMS",
+            "",
+            $"Model: {(Portfolio.Terms.IsNonRecourse ? "Non-recourse" : "Recourse")}",
+            $"Eligible receivables: {Money(summary.EligibleAmount)}",
+            $"Advance rate: {Portfolio.Terms.AdvanceRate:0}%",
+            $"Gross advance: {Money(summary.Advance)}",
+            $"Estimated fees: {Money(summary.TotalCost)}",
+            $"Cash today: {Money(summary.CashToday)}",
+            $"Reserve at collection: {Money(summary.Reserve)}",
+            $"Weighted tenor: {summary.WeightedDays:0} days",
+            $"Effective APR: {summary.EffectiveApr:0.0}%",
+            "",
+            "UNDERWRITING CONDITIONS",
+            "- Debtor confirmation before funding",
+            "- No undisclosed disputes, set-offs, or credit notes",
+            "- Assignment notice sent on funded invoices",
+            "- Final offer subject to KYC and receivable verification",
+            "",
+            "DOCUMENT READINESS",
+            $"- Ready invoices: {summary.DocumentReadyCount}/{Portfolio.Invoices.Count}",
+            $"- Missing required documents: {summary.MissingRequiredDocuments}"
+        };
+
+        if (rejected.Length > 0)
+        {
+            lines.Add("");
+            lines.Add("EXCLUDED INVOICES");
+            foreach (var invoice in rejected)
+            {
+                var decision = Decide(invoice);
+                lines.Add($"- {invoice.InvoiceNumber} / {invoice.Debtor} / score {decision.Score} / {string.Join("; ", decision.Blockers)}");
+            }
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private async Task ExportReport(ReportKind kind)
+    {
+        var export = ReportExport.Export(kind, Portfolio, Portfolio.Terms);
+        await JsRuntime.InvokeVoidAsync("factorLab.downloadTextFile", export.FileName, export.ContentType, export.Content);
+    }
+
+    private async Task DownloadTemplate(TemplateKind kind)
+    {
+        var invoice = SelectedTemplateInvoice();
+        if (invoice is null) return;
+
+        var template = TemplateGeneration.Generate(kind, invoice, Portfolio, Portfolio.Terms);
+        IntegrationOutbox.Publish("Template.Generated", invoice.InvoiceNumber, $"{TemplateLabel(kind)} generated for {invoice.Debtor}.", "Word / Outlook");
+        await JsRuntime.InvokeVoidAsync("factorLab.downloadTextFile", template.FileName, template.ContentType, template.Content);
+    }
+
+    private static string TemplateLabel(TemplateKind kind) => kind switch
+    {
+        TemplateKind.FundingOffer => "Funding offer",
+        TemplateKind.NoticeOfAssignment => "Notice of assignment",
+        TemplateKind.DebtorConfirmation => "Debtor confirmation",
+        TemplateKind.CollectionReminder => "Collection reminder",
+        _ => kind.ToString()
+    };
+
+    private static string TemplateAudience(TemplateKind kind) => kind switch
+    {
+        TemplateKind.FundingOffer => "Client",
+        TemplateKind.NoticeOfAssignment => "Debtor",
+        TemplateKind.DebtorConfirmation => "Debtor",
+        TemplateKind.CollectionReminder => "Debtor",
+        _ => "Workflow"
+    };
+
+    private static string TemplateDescription(TemplateKind kind) => kind switch
+    {
+        TemplateKind.FundingOffer => "Indicative advance, reserve, fee and standard funding conditions.",
+        TemplateKind.NoticeOfAssignment => "Payment redirection notice for assigned receivables.",
+        TemplateKind.DebtorConfirmation => "Verification request for validity, disputes and expected payment date.",
+        TemplateKind.CollectionReminder => "Follow-up text for due, overdue or promise-to-pay invoices.",
+        _ => "Generated workflow template."
+    };
+
+    private string ReportMetric(ReportKind kind) => kind switch
+    {
+        ReportKind.Exposure => $"{Portfolio.Clients.Count + Portfolio.Debtors.Count} profiles",
+        ReportKind.Collections => $"{Portfolio.CollectionCases.Count} cases",
+        ReportKind.Underwriting => $"{Portfolio.UnderwritingDecisions.Count} decisions",
+        ReportKind.Ledger => $"{FundingLedger.BuildLedger(Portfolio, Portfolio.Terms).Count} entries",
+        ReportKind.BorrowingBase => $"{BorrowingBase.Build(Portfolio, Portfolio.Terms).Count} clients",
+        ReportKind.Payments => $"{Portfolio.PaymentMatches.Count} matches",
+        ReportKind.Disputes => $"{Portfolio.DisputeCases.Count} cases",
+        ReportKind.Confirmations => $"{Portfolio.DebtorConfirmations.Count} requests",
+        ReportKind.Fraud => $"{FraudSignals.Detect(Portfolio).Count} signals",
+        _ => $"{Portfolio.Invoices.Count} invoices"
+    };
+
+    private static string ReportLabel(ReportKind kind) => kind switch
+    {
+        ReportKind.Portfolio => "Portfolio report",
+        ReportKind.Exposure => "Exposure report",
+        ReportKind.Collections => "Collections report",
+        ReportKind.Underwriting => "Underwriting report",
+        ReportKind.Ledger => "Ledger report",
+        ReportKind.BorrowingBase => "Borrowing base",
+        ReportKind.Payments => "Payments report",
+        ReportKind.Disputes => "Disputes report",
+        ReportKind.Confirmations => "Confirmations report",
+        ReportKind.Fraud => "Fraud signals",
+        _ => kind.ToString()
+    };
+
+    private static string ReportDescription(ReportKind kind) => kind switch
+    {
+        ReportKind.Portfolio => "Invoice-level eligibility, score, stage, document readiness and cash today.",
+        ReportKind.Exposure => "Client facility and debtor credit-limit utilization for Power BI datasets.",
+        ReportKind.Collections => "Aging, payment, reserve release, chargeback and next-action tracking.",
+        ReportKind.Underwriting => "Decision status, assignee, blockers, warnings and conditions.",
+        ReportKind.Ledger => "Advance, fee, reserve, payment, reserve release and chargeback entries.",
+        ReportKind.BorrowingBase => "Client availability after eligibility, concentration, debtor limits and existing advances.",
+        ReportKind.Payments => "Imported remittance references, match status, invoice, debtor and amount.",
+        ReportKind.Disputes => "Open disputes, credit notes, chargebacks, owners and next actions.",
+        ReportKind.Confirmations => "Debtor confirmation requests, response status, deadlines and notes.",
+        ReportKind.Fraud => "Duplicate, anomaly, missing confirmation, adverse status and override signals.",
+        _ => "Export report data."
+    };
+
+    private static string ScoreClass(int score) =>
+        score >= 75 ? "score-pill good" : score >= 50 ? "score-pill warn" : "score-pill bad";
+
+    private EligibilityDecision Decide(Invoice invoice) =>
+        Calculator.Decide(invoice, Portfolio.Terms, FindClient(invoice.ClientName), FindDebtor(invoice.Debtor), Portfolio.Invoices);
+
+    private ClientProfile? FindClient(string name) =>
+        Portfolio.Clients.FirstOrDefault(client => client.Name == name);
+
+    private DebtorProfile? FindDebtor(string name) =>
+        Portfolio.Debtors.FirstOrDefault(debtor => debtor.Name == name);
+
+    private static string LimitWidth(decimal utilization) =>
+        $"{Math.Clamp(utilization, 0m, 100m):0}%";
+
+    private static string DecisionBadgeClass(BuyDecision decision) => decision switch
+    {
+        BuyDecision.Buy => "decision-badge buy",
+        BuyDecision.Watch => "decision-badge watch",
+        BuyDecision.NoBuy => "decision-badge no-buy",
+        _ => "decision-badge"
+    };
+
+    private static string RoleBadgeClass(UserRole role) => role switch
+    {
+        UserRole.Client => "role-badge client",
+        UserRole.Underwriter => "role-badge underwriter",
+        UserRole.Operations => "role-badge operations",
+        UserRole.Admin => "role-badge admin",
+        _ => "role-badge"
+    };
+
+    private static string ActionPriorityClass(ActionItemPriority priority) => priority switch
+    {
+        ActionItemPriority.Critical => "priority-badge critical",
+        ActionItemPriority.High => "priority-badge high",
+        ActionItemPriority.Medium => "priority-badge medium",
+        _ => "priority-badge low"
+    };
+
+    private static string IntegrationStatusClass(IntegrationEventStatus status) => status switch
+    {
+        IntegrationEventStatus.Delivered => "integration-status delivered",
+        IntegrationEventStatus.Failed => "integration-status failed",
+        _ => "integration-status pending"
+    };
+
+    private static string CovenantStatusClass(CovenantStatus status) => status switch
+    {
+        CovenantStatus.Pass => "covenant-status pass",
+        CovenantStatus.Watch => "covenant-status watch",
+        _ => "covenant-status breach"
+    };
+
+    private static string PaymentMatchClass(PaymentMatchStatus status) => status switch
+    {
+        PaymentMatchStatus.Matched => "payment-status matched",
+        PaymentMatchStatus.Partial => "payment-status partial",
+        _ => "payment-status unmatched"
+    };
+
+    private static string DisputeStatusClass(DisputeStatus status) => status switch
+    {
+        DisputeStatus.Resolved => "dispute-status resolved",
+        DisputeStatus.ChargedBack => "dispute-status charged",
+        DisputeStatus.CreditNoteExpected => "dispute-status credit",
+        _ => "dispute-status open"
+    };
+
+    private static string ConfirmationStatusClass(DebtorConfirmationStatus status) => status switch
+    {
+        DebtorConfirmationStatus.Confirmed => "confirmation-status confirmed",
+        DebtorConfirmationStatus.Disputed => "confirmation-status disputed",
+        DebtorConfirmationStatus.Expired => "confirmation-status expired",
+        DebtorConfirmationStatus.Sent => "confirmation-status sent",
+        _ => "confirmation-status draft"
+    };
+
+    private static string FraudSeverityClass(FraudSignalSeverity severity) => severity switch
+    {
+        FraudSignalSeverity.Critical => "fraud-severity critical",
+        FraudSignalSeverity.High => "fraud-severity high",
+        FraudSignalSeverity.Medium => "fraud-severity medium",
+        _ => "fraud-severity low"
+    };
+
+    private static string UnderwritingLabel(UnderwritingDecisionStatus status) => status switch
+    {
+        UnderwritingDecisionStatus.ApprovedWithConditions => "Conditional",
+        UnderwritingDecisionStatus.OverrideApproved => "Override",
+        _ => status.ToString()
+    };
+
+    private static string UnderwritingBadgeClass(UnderwritingDecisionStatus status) => status switch
+    {
+        UnderwritingDecisionStatus.Approved => "uw-badge approved",
+        UnderwritingDecisionStatus.ApprovedWithConditions => "uw-badge conditional",
+        UnderwritingDecisionStatus.Declined => "uw-badge declined",
+        UnderwritingDecisionStatus.OverrideApproved => "uw-badge override",
+        _ => "uw-badge pending"
+    };
+
+    private static string CollectionLabel(CollectionStatus status) => status switch
+    {
+        CollectionStatus.PromiseToPay => "Promise",
+        _ => status.ToString()
+    };
+
+    private static string CollectionBadgeClass(CollectionStatus status) => status switch
+    {
+        CollectionStatus.Paid => "collection-badge paid",
+        CollectionStatus.PromiseToPay => "collection-badge promise",
+        CollectionStatus.Overdue => "collection-badge overdue",
+        CollectionStatus.Chargeback => "collection-badge chargeback",
+        CollectionStatus.DueToday => "collection-badge due",
+        CollectionStatus.DueSoon => "collection-badge due",
+        _ => "collection-badge"
+    };
+
+    private static string DocumentStatusLabel(Invoice invoice)
+    {
+        if (invoice.Documents.Count == 0) return "No checklist";
+
+        var required = invoice.Documents.Where(document => document.IsRequired).ToArray();
+        var missing = required.Count(document => !document.IsSatisfied);
+        if (missing == 0) return "Ready";
+
+        var uploaded = required.Count(document => document.Status == DocumentStatus.Uploaded);
+        return uploaded > 0 ? $"{missing} pending" : $"{missing} missing";
+    }
+
+    private static string DocumentBadgeClass(Invoice invoice)
+    {
+        if (invoice.Documents.Count == 0) return "doc-badge missing";
+
+        var required = invoice.Documents.Where(document => document.IsRequired).ToArray();
+        if (required.All(document => document.IsSatisfied)) return "doc-badge ready";
+        if (required.Any(document => document.Status == DocumentStatus.Uploaded)) return "doc-badge pending";
+        return "doc-badge missing";
+    }
+
+    private static void ToggleDocument(DocumentRequirement document, ChangeEventArgs eventArgs)
+    {
+        var isChecked = eventArgs.Value is bool value && value;
+        document.Status = isChecked ? DocumentStatus.Verified : DocumentStatus.Missing;
+        document.ReceivedAt = isChecked ? DateTime.UtcNow : null;
+        document.FileName = isChecked && string.IsNullOrWhiteSpace(document.FileName)
+            ? $"{DocumentChecklistFactory.Label(document.Kind).Replace(" ", "-").ToLowerInvariant()}.pdf"
+            : document.FileName;
+    }
+
+    private async Task UploadDocument(Invoice invoice, DocumentRequirement document, InputFileChangeEventArgs eventArgs)
+    {
+        if (!CanUploadDocuments()) return;
+
+        var file = eventArgs.File;
+        var stored = await DocumentStorage.SaveAsync(invoice.InvoiceNumber, document.Kind, file);
+        document.InvoiceNumber = invoice.InvoiceNumber;
+        document.FileName = stored.FileName;
+        document.StoredPath = stored.StoredPath;
+        document.ContentType = stored.ContentType;
+        document.SizeBytes = stored.SizeBytes;
+        document.UploadedBy = UserContext.CurrentUser.DisplayName;
+        document.ReceivedAt = DateTime.UtcNow;
+        document.Status = DocumentStatus.Uploaded;
+        document.ReviewerNote = string.IsNullOrWhiteSpace(document.ReviewerNote)
+            ? "Uploaded and awaiting verification."
+            : document.ReviewerNote;
+
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = invoice.InvoiceNumber,
+            Action = "Document uploaded",
+            Detail = $"{DocumentChecklistFactory.Label(document.Kind)} uploaded: {stored.FileName}"
+        });
+        IntegrationOutbox.Publish("Document.Uploaded", invoice.InvoiceNumber, $"{DocumentChecklistFactory.Label(document.Kind)} uploaded for extraction.", "Azure AI Document Intelligence");
+    }
+
+    private static string DocumentMeta(DocumentRequirement document)
+    {
+        if (string.IsNullOrWhiteSpace(document.FileName)) return "No file uploaded";
+
+        var size = document.SizeBytes > 0 ? $"{document.SizeBytes / 1024m:0.0} KB" : "sample file";
+        var uploadedBy = string.IsNullOrWhiteSpace(document.UploadedBy) ? "sample data" : document.UploadedBy;
+        return $"{document.FileName} / {size} / {uploadedBy}";
+    }
+
+    private static string ReasonClass(string reason, EligibilityDecision decision)
+    {
+        if (decision.Blockers.Contains(reason)) return "reason-chip blocker";
+        if (decision.Warnings.Contains(reason)) return "reason-chip warning";
+        return "reason-chip ready";
+    }
+}

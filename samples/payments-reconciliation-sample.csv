@@ -1,0 +1,4 @@
+reference,invoice,debtor,amount,currency,receivedAt
+BANK-20260707-001,INV-2026-1042,Adriatic Retail Group,42000,EUR,2026-07-07
+BANK-20260707-002,INV-2026-1051,Northline Pharma,25000,EUR,2026-07-07
+BANK-20260707-003,,Unknown Debtor,9900,EUR,2026-07-07

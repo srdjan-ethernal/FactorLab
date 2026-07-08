@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FactorLab</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Invoice factoring workspace</p>
+          <h1>FactorLab</h1>
+        </div>
+        <div class="topbar-actions" aria-label="Workspace actions">
+          <button class="icon-button" id="loadSampleBtn" type="button" title="Load sample book">Sample</button>
+          <button class="icon-button" id="exportBtn" type="button" title="Export invoices as CSV">Export</button>
+          <label class="icon-button file-button" title="Import invoices from CSV">
+            Import
+            <input id="csvInput" type="file" accept=".csv,text/csv" />
+          </label>
+        </div>
+      </header>
+
+      <section class="metrics-grid" aria-label="Portfolio summary">
+        <article class="metric-panel">
+          <span class="metric-label">Eligible invoices</span>
+          <strong id="eligibleValue">EUR 0</strong>
+          <small id="eligibleCount">0 invoices</small>
+        </article>
+        <article class="metric-panel">
+          <span class="metric-label">Cash available today</span>
+          <strong id="cashTodayValue">EUR 0</strong>
+          <small id="advanceRateLabel">0% advance</small>
+        </article>
+        <article class="metric-panel">
+          <span class="metric-label">Estimated total cost</span>
+          <strong id="costValue">EUR 0</strong>
+          <small id="effectiveAprValue">0% effective APR</small>
+        </article>
+        <article class="metric-panel">
+          <span class="metric-label">Portfolio quality</span>
+          <strong id="qualityValue">0</strong>
+          <small id="qualityLabel">No data</small>
+        </article>
+      </section>
+
+      <section class="work-grid">
+        <section class="panel deal-panel" aria-label="Deal controls">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Pricing</p>
+              <h2>Deal terms</h2>
+            </div>
+            <button id="resetTermsBtn" class="text-button" type="button">Reset</button>
+          </div>
+
+          <form class="control-grid" id="termsForm">
+            <label>
+              Currency
+              <select id="currency">
+                <option>EUR</option>
+                <option>USD</option>
+                <option>GBP</option>
+                <option>RSD</option>
+              </select>
+            </label>
+            <label>
+              Advance rate
+              <input id="advanceRate" type="number" min="40" max="98" step="1" value="85" />
+            </label>
+            <label>
+              Discount fee / 30d
+              <input id="discountRate" type="number" min="0" max="10" step="0.05" value="1.45" />
+            </label>
+            <label>
+              Service fee
+              <input id="serviceFee" type="number" min="0" max="10" step="0.05" value="0.35" />
+            </label>
+            <label>
+              Minimum fee
+              <input id="minimumFee" type="number" min="0" step="10" value="75" />
+            </label>
+            <label>
+              Bank APR compare
+              <input id="bankApr" type="number" min="0" max="80" step="0.1" value="12" />
+            </label>
+          </form>
+
+          <div class="segmented" role="tablist" aria-label="Factoring model">
+            <button class="segment active" type="button" data-model="recourse">Recourse</button>
+            <button class="segment" type="button" data-model="nonrecourse">Non-recourse</button>
+          </div>
+
+          <div class="bars" aria-label="Cash split">
+            <div class="bar-row">
+              <span>Advance</span>
+              <div class="bar-track"><span id="advanceBar"></span></div>
+              <b id="advanceSplit">0%</b>
+            </div>
+            <div class="bar-row">
+              <span>Reserve</span>
+              <div class="bar-track reserve"><span id="reserveBar"></span></div>
+              <b id="reserveSplit">0%</b>
+            </div>
+            <div class="bar-row">
+              <span>Fees</span>
+              <div class="bar-track fees"><span id="feeBar"></span></div>
+              <b id="feeSplit">0%</b>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel chart-panel" aria-label="Cash flow chart">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Cash flow</p>
+              <h2>Collection view</h2>
+            </div>
+            <span id="weightedDaysLabel" class="status-pill">0 days</span>
+          </div>
+          <canvas id="cashChart" width="900" height="420" aria-label="Cash flow chart"></canvas>
+          <div class="chart-legend">
+            <span><i class="legend-dot now"></i>Today</span>
+            <span><i class="legend-dot reserve-dot"></i>Reserve</span>
+            <span><i class="legend-dot cost-dot"></i>Cost</span>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel invoice-panel" aria-label="Invoice book">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Invoice book</p>
+            <h2>Receivables</h2>
+          </div>
+          <div class="panel-actions">
+            <button id="submitEligibleBtn" class="text-button" type="button">Submit eligible</button>
+            <button id="addInvoiceBtn" class="primary-button" type="button">+ Invoice</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Debtor</th>
+                <th>Invoice no.</th>
+                <th>Amount</th>
+                <th>Days to pay</th>
+                <th>Rating</th>
+                <th>Concentration</th>
+                <th>Status</th>
+                <th>Workflow</th>
+                <th>Score</th>
+                <th>Eligibility</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="invoiceRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel workflow-panel" aria-label="Funding workflow">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Workflow</p>
+            <h2>Funding pipeline</h2>
+          </div>
+          <span id="pipelineValue" class="status-pill">0 active</span>
+        </div>
+        <div class="workflow-grid" id="workflowGrid"></div>
+      </section>
+
+      <section class="insight-grid">
+        <section class="panel" aria-label="Risk notes">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Risk</p>
+              <h2>Underwriting signals</h2>
+            </div>
+          </div>
+          <ul class="signal-list" id="signalsList"></ul>
+        </section>
+
+        <section class="panel" aria-label="Offer summary">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Offer</p>
+              <h2>Indicative term sheet</h2>
+            </div>
+            <button id="copyOfferBtn" class="text-button" type="button">Copy</button>
+          </div>
+          <pre id="offerText"></pre>
+        </section>
+      </section>
+    </main>
+
+    <template id="rowTemplate">
+      <tr>
+        <td><input class="debtor-input" type="text" /></td>
+        <td><input class="invoice-input" type="text" /></td>
+        <td><input class="amount-input numeric" type="number" min="0" step="100" /></td>
+        <td><input class="days-input numeric" type="number" min="1" max="180" step="1" /></td>
+        <td>
+          <select class="rating-input">
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </td>
+        <td><input class="concentration-input numeric" type="number" min="0" max="100" step="1" /></td>
+        <td>
+          <select class="status-input">
+            <option value="clean">Clean</option>
+            <option value="unverified">Unverified</option>
+            <option value="disputed">Disputed</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </td>
+        <td>
+          <select class="workflow-input">
+            <option value="draft">Draft</option>
+            <option value="submitted">Submitted</option>
+            <option value="review">Review</option>
+            <option value="approved">Approved</option>
+            <option value="funded">Funded</option>
+            <option value="collected">Collected</option>
+            <option value="settled">Settled</option>
+          </select>
+        </td>
+        <td><span class="score-pill">0</span></td>
+        <td><div class="reason-list"></div></td>
+        <td><button class="remove-button" type="button" title="Remove invoice">x</button></td>
+      </tr>
+    </template>
+
+    <script src="script.js"></script>
+  </body>
+</html>

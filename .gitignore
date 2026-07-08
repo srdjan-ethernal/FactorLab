@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+*.log
+.factorlab.out.log
+.factorlab.err.log
+.nuget-appdata/
+.nuget-cache/
+.nuget-packages/
+.gitdata/
+src/**/App_Data/Keys/
+src/**/App_Data/Uploads/
