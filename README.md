@@ -7,6 +7,8 @@ The repository now has two layers:
 - `index.html`: the original static prototype.
 - `FactorLab.sln`: the Microsoft-stack production foundation built with ASP.NET Core / Blazor Server.
 
+System architecture: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Run the .NET app
 
 ```powershell
