@@ -35,7 +35,7 @@ The default development URLs are:
 - Funding workflow stages from draft through settlement.
 - Funding batch creation for approved invoices, including gross receivables, advance, fees, reserve and net cash.
 - Funding ledger for advances, fees, reserve held, debtor payments, reserve release and chargebacks.
-- Client offer portal workflow with offer creation, send, acceptance, decline, expiry, portal token and transparent fee metrics.
+- Client offer portal workflow with offer creation, send, acceptance, decline, expiry, portal token, dedicated `/portal/{token}` page and transparent fee metrics.
 - Document checklist for each invoice, including invoice, PO/contract, proof of delivery, debtor confirmation, KYC, and notice of assignment.
 - Document readiness metrics and reviewer notes.
 - Local document upload storage under `App_Data/Uploads`, behind a storage service that can be swapped for Azure Blob Storage.
@@ -92,6 +92,7 @@ The default development URLs are:
 - `GET /api/client-offers`
 - `POST /api/client-offers/create/{clientName}`
 - `POST /api/client-offers/accept/{offerNumber}`
+- `POST /api/client-offers/decline/{offerNumber}`
 
 ## CSV columns
 

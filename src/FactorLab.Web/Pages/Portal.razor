@@ -1,0 +1,159 @@
+@page "/portal/{Token}"
+@using FactorLab.Web.Domain
+@using FactorLab.Web.Persistence
+@using FactorLab.Web.Services
+@inject IPortfolioRepository Portfolio
+@inject IClientOfferService ClientOffers
+@inject IIntegrationOutboxService IntegrationOutbox
+
+<PageTitle>Client offer</PageTitle>
+
+@if (Offer is null)
+{
+    <main class="portal-shell">
+        <section class="portal-empty">
+            <p class="eyebrow">Client portal</p>
+            <h1>Offer not found</h1>
+            <p>This link is invalid or the offer is no longer available.</p>
+        </section>
+    </main>
+}
+else
+{
+    <main class="portal-shell">
+        <section class="portal-hero">
+            <div>
+                <p class="eyebrow">Client portal</p>
+                <h1>@Offer.ClientName</h1>
+                <p>@Offer.OfferNumber / expires @Offer.ExpiresAt.ToString("dd MMM yyyy")</p>
+            </div>
+            <span class="@ClientOfferStatusClass(Offer.Status)">@Offer.Status</span>
+        </section>
+
+        <section class="portal-metrics">
+            <article>
+                <span>Receivables</span>
+                <strong>@Money(Offer.GrossReceivables)</strong>
+            </article>
+            <article>
+                <span>Cash today</span>
+                <strong>@Money(Offer.NetCash)</strong>
+            </article>
+            <article>
+                <span>Fees</span>
+                <strong>@Money(Offer.Fees)</strong>
+            </article>
+            <article>
+                <span>Reserve</span>
+                <strong>@Money(Offer.ReserveHeld)</strong>
+            </article>
+        </section>
+
+        <section class="portal-panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Funding offer</p>
+                    <h2>Transparent economics</h2>
+                </div>
+                <span class="status-pill">@Offer.InvoiceCount invoice(s)</span>
+            </div>
+            <div class="portal-detail-grid">
+                <div>
+                    <span>Advance amount</span>
+                    <strong>@Money(Offer.AdvanceAmount)</strong>
+                </div>
+                <div>
+                    <span>Effective APR</span>
+                    <strong>@Offer.EffectiveApr.ToString("0.0")%</strong>
+                </div>
+                <div>
+                    <span>Weighted tenor</span>
+                    <strong>@Offer.WeightedDays.ToString("0") days</strong>
+                </div>
+                <div>
+                    <span>Invoices</span>
+                    <strong>@Offer.InvoiceNumbers</strong>
+                </div>
+            </div>
+            <p class="portal-note">@Offer.Notes</p>
+            @if (!string.IsNullOrWhiteSpace(portalMessage))
+            {
+                <p class="portal-message">@portalMessage</p>
+            }
+            <div class="portal-actions">
+                <button class="primary-action" disabled="@(!Offer.IsActionable)" @onclick="AcceptOffer">Accept offer</button>
+                <button class="danger-action" disabled="@(!Offer.IsActionable)" @onclick="DeclineOffer">Decline</button>
+            </div>
+        </section>
+
+        <section class="portal-panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Included invoices</p>
+                    <h2>Receivables in this offer</h2>
+                </div>
+            </div>
+            <div class="portal-invoice-list">
+                @foreach (var invoice in IncludedInvoices())
+                {
+                    <article>
+                        <strong>@invoice.InvoiceNumber</strong>
+                        <span>@invoice.Debtor</span>
+                        <b>@Money(invoice.Amount)</b>
+                    </article>
+                }
+            </div>
+        </section>
+    </main>
+}
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = "";
+
+    private string portalMessage = "";
+
+    private ClientOffer? Offer =>
+        Portfolio.ClientOffers.FirstOrDefault(item => item.PortalToken.Equals(Token, StringComparison.OrdinalIgnoreCase));
+
+    private string Money(decimal value) => $"{Portfolio.Terms.Currency} {value:N0}";
+
+    private IEnumerable<Invoice> IncludedInvoices()
+    {
+        if (Offer is null) yield break;
+
+        var numbers = Offer.InvoiceNumbers.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        foreach (var invoiceNumber in numbers)
+        {
+            var invoice = Portfolio.Invoices.FirstOrDefault(item => item.InvoiceNumber.Equals(invoiceNumber, StringComparison.OrdinalIgnoreCase));
+            if (invoice is not null) yield return invoice;
+        }
+    }
+
+    private void AcceptOffer()
+    {
+        if (Offer is null) return;
+
+        ClientOffers.Accept(Portfolio, Offer, "Client portal");
+        portalMessage = "Offer accepted. Operations can now prepare funding.";
+        IntegrationOutbox.Publish("ClientPortal.Accepted", Offer.OfferNumber, $"{Offer.ClientName} accepted the offer from portal.", "Dynamics 365");
+    }
+
+    private void DeclineOffer()
+    {
+        if (Offer is null) return;
+
+        ClientOffers.Decline(Offer, "Client portal");
+        portalMessage = "Offer declined. Your account manager will follow up.";
+        IntegrationOutbox.Publish("ClientPortal.Declined", Offer.OfferNumber, $"{Offer.ClientName} declined the offer from portal.", "Dynamics 365");
+    }
+
+    private static string ClientOfferStatusClass(ClientOfferStatus status) => status switch
+    {
+        ClientOfferStatus.Accepted => "offer-status accepted",
+        ClientOfferStatus.Declined => "offer-status declined",
+        ClientOfferStatus.Expired => "offer-status expired",
+        ClientOfferStatus.Sent => "offer-status sent",
+        _ => "offer-status draft"
+    };
+}

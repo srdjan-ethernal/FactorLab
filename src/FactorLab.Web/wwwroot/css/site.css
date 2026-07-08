@@ -348,6 +348,116 @@ button:disabled {
     color: var(--danger);
 }
 
+.portal-shell {
+    display: grid;
+    gap: 14px;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.portal-hero,
+.portal-empty,
+.portal-panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 18px 45px rgba(31, 46, 43, 0.08);
+    padding: 20px;
+}
+
+.portal-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.portal-hero h1,
+.portal-panel h2,
+.portal-empty h1 {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.portal-hero p,
+.portal-empty p,
+.portal-note,
+.portal-message {
+    color: var(--muted);
+    font-weight: 700;
+}
+
+.portal-metrics,
+.portal-detail-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.portal-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.portal-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-metrics article,
+.portal-detail-grid div {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 14px;
+}
+
+.portal-metrics span,
+.portal-detail-grid span {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.portal-metrics strong {
+    font-size: 1.35rem;
+}
+
+.portal-detail-grid strong {
+    overflow-wrap: anywhere;
+}
+
+.portal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.portal-invoice-list {
+    display: grid;
+    gap: 8px;
+}
+
+.portal-invoice-list article {
+    display: grid;
+    grid-template-columns: 160px 1fr 130px;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+    padding: 9px 0;
+}
+
+.portal-invoice-list span {
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 750;
+}
+
+.portal-invoice-list b {
+    text-align: right;
+}
+
 .action-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1739,6 +1849,8 @@ pre {
     .report-grid,
     .integration-grid,
     .template-grid,
+    .portal-metrics,
+    .portal-detail-grid,
     .document-grid {
         grid-template-columns: 1fr;
     }
@@ -1771,12 +1883,21 @@ pre {
     .collection-form,
     .ledger-row,
     .availability-row,
-    .audit-row {
+    .audit-row,
+    .portal-invoice-list article {
         grid-template-columns: 1fr;
     }
 
     .ledger-row b,
     .availability-row b {
         text-align: left;
+    }
+
+    .portal-shell {
+        padding: 14px;
+    }
+
+    .portal-hero {
+        flex-direction: column;
     }
 }

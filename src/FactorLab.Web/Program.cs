@@ -261,6 +261,19 @@ app.MapPost("/api/client-offers/accept/{offerNumber}", (string offerNumber, IPor
     return Results.Ok(offer);
 });
 
+app.MapPost("/api/client-offers/decline/{offerNumber}", (string offerNumber, IPortfolioRepository portfolio, IClientOfferService offers, IIntegrationOutboxService outbox) =>
+{
+    var offer = portfolio.ClientOffers.FirstOrDefault(item => item.OfferNumber.Equals(offerNumber, StringComparison.OrdinalIgnoreCase));
+    if (offer is null)
+    {
+        return Results.NotFound(new { Error = "Offer not found." });
+    }
+
+    offers.Decline(offer, "Client portal");
+    outbox.Publish("ClientOffer.Declined", offer.OfferNumber, $"{offer.ClientName} declined offer.", "Dynamics 365");
+    return Results.Ok(offer);
+});
+
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
