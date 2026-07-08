@@ -14,6 +14,28 @@ public sealed class SamplePortfolioService : IPortfolioRepository
         new ClientProfile { Name = "Urban Supply Co.", Industry = "Food distribution", Country = "Serbia", FacilityLimit = 50000m, ConcentrationLimitPercent = 30m, KycStatus = KycStatus.RefreshRequired, BuyDecision = BuyDecision.Watch, AccountManager = "Ana Ilic" }
     };
 
+    public List<FacilityApplication> FacilityApplications { get; } = new()
+    {
+        new FacilityApplication
+        {
+            ApplicationNumber = "APP-2026-0001",
+            LegalName = "Danube Export House d.o.o.",
+            Industry = "Export distribution",
+            Country = "Serbia",
+            ContactEmail = "finance@danube-export.example",
+            RequestedLimit = 120000m,
+            MonthlyTurnover = 90000m,
+            AverageInvoiceSize = 18000m,
+            ExpectedDebtorCount = 7,
+            YearsTrading = 4,
+            Status = FacilityApplicationStatus.InReview,
+            RiskScore = 82,
+            ApprovedLimit = 108000m,
+            AssignedTo = "Mila Petrovic",
+            DecisionNote = "Strong turnover and diversified debtor base. Awaiting ownership chart."
+        }
+    };
+
     public List<DebtorProfile> Debtors { get; } = new()
     {
         new DebtorProfile { Name = "Adriatic Retail Group", Sector = "Retail", Country = "Croatia", CreditLimit = 70000m, Rating = DebtorRating.A, BuyDecision = BuyDecision.Buy, AverageDaysToPay = 37, DilutionPercent = 1.2m },

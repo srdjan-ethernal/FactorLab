@@ -39,6 +39,7 @@ builder.Services.AddSingleton<IDisputeService, DisputeService>();
 builder.Services.AddSingleton<IDebtorConfirmationService, DebtorConfirmationService>();
 builder.Services.AddSingleton<IFraudSignalService, FraudSignalService>();
 builder.Services.AddSingleton<IClientOfferService, ClientOfferService>();
+builder.Services.AddSingleton<IFacilityApplicationService, FacilityApplicationService>();
 #if ENABLE_EFCORE
 builder.Services.AddDbContext<FactorLabDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("FactorLabSql")));
@@ -235,6 +236,55 @@ app.MapGet("/api/fraud-signals", (IPortfolioRepository portfolio, IFraudSignalSe
 
 app.MapGet("/api/client-offers", (IPortfolioRepository portfolio) =>
     Results.Ok(portfolio.ClientOffers));
+
+app.MapGet("/api/facility-applications", (IPortfolioRepository portfolio) =>
+    Results.Ok(portfolio.FacilityApplications));
+
+app.MapPost("/api/facility-applications", (FacilityApplication application, IPortfolioRepository portfolio, IFacilityApplicationService applications, IIntegrationOutboxService outbox) =>
+{
+    var submitted = applications.Submit(portfolio, application);
+    outbox.Publish("FacilityApplication.Submitted", submitted.ApplicationNumber, $"{submitted.LegalName} requested {submitted.RequestedLimit:N2}.", "Dynamics 365");
+    return Results.Ok(submitted);
+});
+
+app.MapPost("/api/facility-applications/review/{applicationNumber}", (string applicationNumber, IPortfolioRepository portfolio, IFacilityApplicationService applications, IIntegrationOutboxService outbox) =>
+{
+    var application = portfolio.FacilityApplications.FirstOrDefault(item => item.ApplicationNumber.Equals(applicationNumber, StringComparison.OrdinalIgnoreCase));
+    if (application is null)
+    {
+        return Results.NotFound(new { Error = "Application not found." });
+    }
+
+    applications.MoveToReview(application, "API");
+    outbox.Publish("FacilityApplication.InReview", application.ApplicationNumber, $"{application.LegalName} moved to review.", "Microsoft Teams");
+    return Results.Ok(application);
+});
+
+app.MapPost("/api/facility-applications/approve/{applicationNumber}", (string applicationNumber, IPortfolioRepository portfolio, IFacilityApplicationService applications, IIntegrationOutboxService outbox) =>
+{
+    var application = portfolio.FacilityApplications.FirstOrDefault(item => item.ApplicationNumber.Equals(applicationNumber, StringComparison.OrdinalIgnoreCase));
+    if (application is null)
+    {
+        return Results.NotFound(new { Error = "Application not found." });
+    }
+
+    applications.Approve(portfolio, application, "API");
+    outbox.Publish("FacilityApplication.Approved", application.ApplicationNumber, $"{application.LegalName} approved for {application.ApprovedLimit:N2}.", "Dynamics 365");
+    return Results.Ok(application);
+});
+
+app.MapPost("/api/facility-applications/decline/{applicationNumber}", (string applicationNumber, IPortfolioRepository portfolio, IFacilityApplicationService applications, IIntegrationOutboxService outbox) =>
+{
+    var application = portfolio.FacilityApplications.FirstOrDefault(item => item.ApplicationNumber.Equals(applicationNumber, StringComparison.OrdinalIgnoreCase));
+    if (application is null)
+    {
+        return Results.NotFound(new { Error = "Application not found." });
+    }
+
+    applications.Decline(application, "API");
+    outbox.Publish("FacilityApplication.Declined", application.ApplicationNumber, $"{application.LegalName} declined.", "Dynamics 365");
+    return Results.Ok(application);
+});
 
 app.MapPost("/api/client-offers/create/{clientName}", (string clientName, IPortfolioRepository portfolio, IClientOfferService offers, IIntegrationOutboxService outbox) =>
 {

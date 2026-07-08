@@ -24,6 +24,7 @@
 @inject IDebtorConfirmationService DebtorConfirmationService
 @inject IFraudSignalService FraudSignals
 @inject IClientOfferService ClientOffers
+@inject IFacilityApplicationService FacilityApplications
 @inject IJSRuntime JsRuntime
 
 <PageTitle>FactorLab</PageTitle>
@@ -85,6 +86,61 @@
         <strong>@summary.DocumentReadyCount/@invoices.Count</strong>
         <small>@summary.MissingRequiredDocuments missing required docs</small>
     </article>
+</section>
+
+<section class="panel onboarding-panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Client onboarding</p>
+            <h2>Facility applications</h2>
+            @if (!string.IsNullOrWhiteSpace(facilityApplicationMessage))
+            {
+                <small class="inline-status">@facilityApplicationMessage</small>
+            }
+        </div>
+        <span class="status-pill">@Portfolio.FacilityApplications.Count(item => item.IsActionable) active</span>
+    </div>
+    <div class="onboarding-layout">
+        <article class="application-form">
+            <div class="form-grid">
+                <label>Legal name <input @bind="newApplicationLegalName" /></label>
+                <label>Contact email <input @bind="newApplicationEmail" /></label>
+                <label>Industry <input @bind="newApplicationIndustry" /></label>
+                <label>Country <input @bind="newApplicationCountry" /></label>
+                <label>Requested limit <input type="number" @bind="newApplicationRequestedLimit" /></label>
+                <label>Monthly turnover <input type="number" @bind="newApplicationMonthlyTurnover" /></label>
+                <label>Average invoice <input type="number" @bind="newApplicationAverageInvoice" /></label>
+                <label>Debtor count <input type="number" @bind="newApplicationDebtorCount" /></label>
+                <label>Years trading <input type="number" @bind="newApplicationYearsTrading" /></label>
+            </div>
+            <button class="primary-action" @onclick="SubmitFacilityApplication">Submit application</button>
+        </article>
+        <div class="application-grid">
+            @foreach (var application in Portfolio.FacilityApplications.OrderByDescending(item => item.SubmittedAt).Take(6))
+            {
+                <article class="application-card">
+                    <div class="integration-head">
+                        <span class="@FacilityApplicationStatusClass(application.Status)">@ApplicationStatusLabel(application.Status)</span>
+                        <span>@application.ApplicationNumber</span>
+                    </div>
+                    <strong>@application.LegalName</strong>
+                    <div class="application-metrics">
+                        <span>Score <b>@application.RiskScore</b></span>
+                        <span>Requested <b>@Money(application.RequestedLimit)</b></span>
+                        <span>Suggested <b>@Money(application.ApprovedLimit)</b></span>
+                    </div>
+                    <p>@application.Industry / @application.Country / @application.ExpectedDebtorCount debtor(s)</p>
+                    <small>@application.DecisionNote</small>
+                    <div class="collection-actions">
+                        <button class="secondary-action" disabled="@(!UserContext.CanUnderwrite || !application.IsActionable)" @onclick="() => ReviewFacilityApplication(application)">Review</button>
+                        <button class="warning-action" disabled="@(!UserContext.CanUnderwrite || !application.IsActionable)" @onclick="() => RequestFacilityApplicationInfo(application)">More info</button>
+                        <button class="secondary-action" disabled="@(!UserContext.CanUnderwrite || !application.IsActionable)" @onclick="() => ApproveFacilityApplication(application)">Approve</button>
+                        <button class="danger-action" disabled="@(!UserContext.CanUnderwrite || !application.IsActionable)" @onclick="() => DeclineFacilityApplication(application)">Decline</button>
+                    </div>
+                </article>
+            }
+        </div>
+    </div>
 </section>
 
 <section class="panel client-portal-panel">
@@ -1007,7 +1063,17 @@
     private string fundingBatchMessage = "";
     private string paymentReconciliationMessage = "";
     private string clientOfferMessage = "";
+    private string facilityApplicationMessage = "";
     private string? selectedOfferClientName;
+    private string newApplicationLegalName = "Nova Trade d.o.o.";
+    private string newApplicationEmail = "finance@nova-trade.example";
+    private string newApplicationIndustry = "Wholesale trading";
+    private string newApplicationCountry = "Serbia";
+    private decimal newApplicationRequestedLimit = 90000m;
+    private decimal newApplicationMonthlyTurnover = 70000m;
+    private decimal newApplicationAverageInvoice = 14000m;
+    private int newApplicationDebtorCount = 6;
+    private int newApplicationYearsTrading = 3;
     private readonly HashSet<string> CompletedActionIds = new(StringComparer.OrdinalIgnoreCase);
 
     private string Money(decimal value) => $"{Portfolio.Terms.Currency} {value:N0}";
@@ -1075,6 +1141,82 @@
                 IntegrationOutbox.Publish("BorrowingBase.NoAvailability", line.ClientName, $"{line.ClientName} has {Money(line.Availability)} available after current base and advances.", "Microsoft Teams");
             }
         }
+    }
+
+    private void SubmitFacilityApplication()
+    {
+        var application = FacilityApplications.Submit(Portfolio, new FacilityApplication
+        {
+            LegalName = newApplicationLegalName,
+            Industry = newApplicationIndustry,
+            Country = newApplicationCountry,
+            ContactEmail = newApplicationEmail,
+            RequestedLimit = newApplicationRequestedLimit,
+            MonthlyTurnover = newApplicationMonthlyTurnover,
+            AverageInvoiceSize = newApplicationAverageInvoice,
+            ExpectedDebtorCount = newApplicationDebtorCount,
+            YearsTrading = newApplicationYearsTrading
+        });
+
+        facilityApplicationMessage = $"{application.ApplicationNumber}: score {application.RiskScore}, suggested limit {Money(application.ApprovedLimit)}.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = application.ApplicationNumber,
+            Action = "Application submitted",
+            Detail = $"{application.LegalName} requested {Money(application.RequestedLimit)}"
+        });
+        IntegrationOutbox.Publish("FacilityApplication.Submitted", application.ApplicationNumber, $"{application.LegalName} submitted facility request.", "Dynamics 365");
+    }
+
+    private void ReviewFacilityApplication(FacilityApplication application)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        FacilityApplications.MoveToReview(application, UserContext.CurrentUser.DisplayName);
+        facilityApplicationMessage = $"{application.ApplicationNumber} moved to review.";
+        IntegrationOutbox.Publish("FacilityApplication.InReview", application.ApplicationNumber, $"{application.LegalName} assigned to {application.AssignedTo}.", "Microsoft Teams");
+    }
+
+    private void RequestFacilityApplicationInfo(FacilityApplication application)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        FacilityApplications.RequestMoreInfo(application, UserContext.CurrentUser.DisplayName);
+        facilityApplicationMessage = $"{application.ApplicationNumber} waiting for more info.";
+        IntegrationOutbox.Publish("FacilityApplication.MoreInfo", application.ApplicationNumber, application.DecisionNote, "Outlook");
+    }
+
+    private void ApproveFacilityApplication(FacilityApplication application)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        FacilityApplications.Approve(Portfolio, application, UserContext.CurrentUser.DisplayName);
+        facilityApplicationMessage = $"{application.ApplicationNumber} approved at {Money(application.ApprovedLimit)}.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = application.ApplicationNumber,
+            Action = "Facility approved",
+            Detail = $"{application.LegalName} approved for {Money(application.ApprovedLimit)}"
+        });
+        IntegrationOutbox.Publish("FacilityApplication.Approved", application.ApplicationNumber, $"{application.LegalName} approved for {Money(application.ApprovedLimit)}.", "Dynamics 365");
+    }
+
+    private void DeclineFacilityApplication(FacilityApplication application)
+    {
+        if (!UserContext.CanUnderwrite) return;
+
+        FacilityApplications.Decline(application, UserContext.CurrentUser.DisplayName);
+        facilityApplicationMessage = $"{application.ApplicationNumber} declined.";
+        Portfolio.AuditEvents.Add(new AuditEvent
+        {
+            Actor = UserContext.CurrentUser.DisplayName,
+            Entity = application.ApplicationNumber,
+            Action = "Facility declined",
+            Detail = application.DecisionNote
+        });
+        IntegrationOutbox.Publish("FacilityApplication.Declined", application.ApplicationNumber, $"{application.LegalName} declined.", "Dynamics 365");
     }
 
     private void CreateClientOffer()
@@ -1546,6 +1688,7 @@
         ReportKind.Underwriting => $"{Portfolio.UnderwritingDecisions.Count} decisions",
         ReportKind.Ledger => $"{FundingLedger.BuildLedger(Portfolio, Portfolio.Terms).Count} entries",
         ReportKind.BorrowingBase => $"{BorrowingBase.Build(Portfolio, Portfolio.Terms).Count} clients",
+        ReportKind.Applications => $"{Portfolio.FacilityApplications.Count} applications",
         ReportKind.Payments => $"{Portfolio.PaymentMatches.Count} matches",
         ReportKind.Disputes => $"{Portfolio.DisputeCases.Count} cases",
         ReportKind.Confirmations => $"{Portfolio.DebtorConfirmations.Count} requests",
@@ -1561,6 +1704,7 @@
         ReportKind.Underwriting => "Underwriting report",
         ReportKind.Ledger => "Ledger report",
         ReportKind.BorrowingBase => "Borrowing base",
+        ReportKind.Applications => "Applications report",
         ReportKind.Payments => "Payments report",
         ReportKind.Disputes => "Disputes report",
         ReportKind.Confirmations => "Confirmations report",
@@ -1576,6 +1720,7 @@
         ReportKind.Underwriting => "Decision status, assignee, blockers, warnings and conditions.",
         ReportKind.Ledger => "Advance, fee, reserve, payment, reserve release and chargeback entries.",
         ReportKind.BorrowingBase => "Client availability after eligibility, concentration, debtor limits and existing advances.",
+        ReportKind.Applications => "Facility requests, turnover, debtor count, risk score, status and approved limits.",
         ReportKind.Payments => "Imported remittance references, match status, invoice, debtor and amount.",
         ReportKind.Disputes => "Open disputes, credit notes, chargebacks, owners and next actions.",
         ReportKind.Confirmations => "Debtor confirmation requests, response status, deadlines and notes.",
@@ -1676,6 +1821,22 @@
         ClientOfferStatus.Expired => "offer-status expired",
         ClientOfferStatus.Sent => "offer-status sent",
         _ => "offer-status draft"
+    };
+
+    private static string FacilityApplicationStatusClass(FacilityApplicationStatus status) => status switch
+    {
+        FacilityApplicationStatus.Approved => "application-status approved",
+        FacilityApplicationStatus.Declined => "application-status declined",
+        FacilityApplicationStatus.MoreInfoRequired => "application-status info",
+        FacilityApplicationStatus.InReview => "application-status review",
+        _ => "application-status submitted"
+    };
+
+    private static string ApplicationStatusLabel(FacilityApplicationStatus status) => status switch
+    {
+        FacilityApplicationStatus.MoreInfoRequired => "More info",
+        FacilityApplicationStatus.InReview => "Review",
+        _ => status.ToString()
     };
 
     private static string UnderwritingLabel(UnderwritingDecisionStatus status) => status switch

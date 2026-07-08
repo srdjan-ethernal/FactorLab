@@ -29,6 +29,7 @@ public sealed class CsvReportExportService : IReportExportService
             ReportKind.Underwriting => Build("factorlab-underwriting.csv", UnderwritingRows(portfolio, terms)),
             ReportKind.Ledger => Build("factorlab-ledger.csv", LedgerRows(portfolio, terms)),
             ReportKind.BorrowingBase => Build("factorlab-borrowing-base.csv", BorrowingBaseRows(portfolio, terms)),
+            ReportKind.Applications => Build("factorlab-facility-applications.csv", ApplicationRows(portfolio)),
             ReportKind.Payments => Build("factorlab-payments.csv", PaymentRows(portfolio)),
             ReportKind.Disputes => Build("factorlab-disputes.csv", DisputeRows(portfolio)),
             ReportKind.Confirmations => Build("factorlab-confirmations.csv", ConfirmationRows(portfolio)),
@@ -205,6 +206,34 @@ public sealed class CsvReportExportService : IReportExportService
                 Money(line.ExistingAdvance),
                 Money(line.Availability),
                 line.Status
+            };
+        }
+    }
+
+    private static IEnumerable<string[]> ApplicationRows(IPortfolioRepository portfolio)
+    {
+        yield return new[] { "ApplicationNumber", "LegalName", "Industry", "Country", "ContactEmail", "RequestedLimit", "MonthlyTurnover", "AverageInvoiceSize", "ExpectedDebtorCount", "YearsTrading", "Status", "RiskScore", "ApprovedLimit", "AssignedTo", "DecisionNote", "SubmittedAt", "ReviewedAt" };
+        foreach (var application in portfolio.FacilityApplications)
+        {
+            yield return new[]
+            {
+                application.ApplicationNumber,
+                application.LegalName,
+                application.Industry,
+                application.Country,
+                application.ContactEmail,
+                Money(application.RequestedLimit),
+                Money(application.MonthlyTurnover),
+                Money(application.AverageInvoiceSize),
+                application.ExpectedDebtorCount.ToString(CultureInfo.InvariantCulture),
+                application.YearsTrading.ToString(CultureInfo.InvariantCulture),
+                application.Status.ToString(),
+                application.RiskScore.ToString(CultureInfo.InvariantCulture),
+                Money(application.ApprovedLimit),
+                application.AssignedTo,
+                application.DecisionNote,
+                application.SubmittedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                application.ReviewedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? ""
             };
         }
     }

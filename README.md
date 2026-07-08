@@ -30,6 +30,7 @@ The default development URLs are:
 ## Current features
 
 - Editable invoice book with debtor, amount, tenor, rating, concentration, and status.
+- Facility application intake with requested limit, turnover, debtor diversification, trading history, risk score and approval workflow.
 - Bulk CSV invoice import with add/update behavior, audit trail and integration event.
 - Eligibility scoring with per-invoice funding reasons and automatic exclusion for disputed or high-risk receivables.
 - Funding workflow stages from draft through settlement.
@@ -40,6 +41,7 @@ The default development URLs are:
 - Document readiness metrics and reviewer notes.
 - Local document upload storage under `App_Data/Uploads`, behind a storage service that can be swapped for Azure Blob Storage.
 - Client profiles with facility limits, KYC status, concentration limits and buy/watch/no-buy status.
+- Automatic client profile creation or refresh when a facility application is approved.
 - Debtor profiles with credit limits, payment history, dilution and buy/watch/no-buy status.
 - Exposure tracking against client facilities and debtor credit limits.
 - Borrowing base and availability calculation by client after eligibility, concentration, debtor limits and existing advances.
@@ -57,7 +59,7 @@ The default development URLs are:
 - Role-based UI actions for funding submission, underwriting and collections operations.
 - AI-ready risk memo panel with local deterministic recommendation, strengths, risks and conditions.
 - Document intelligence abstraction with local metadata extraction, ready to swap for Azure AI Document Intelligence.
-- Reporting/export center with portfolio, exposure, collections, underwriting, ledger, borrowing-base, payments, disputes, confirmations and fraud CSV reports.
+- Reporting/export center with portfolio, exposure, applications, collections, underwriting, ledger, borrowing-base, payments, disputes, confirmations and fraud CSV reports.
 - Debtor confirmation workflow with sent/confirmed/disputed responses and automatic document readiness updates.
 - Integration outbox for Microsoft Teams, Outlook, Power Automate, Power BI and Azure AI Document Intelligence events.
 - Template center for funding offers, notices of assignment, debtor confirmations and collection reminders.
@@ -76,6 +78,11 @@ The default development URLs are:
 - `GET /api/reports/{portfolio|exposure|collections|underwriting}`
 - `GET /api/action-items`
 - `GET /api/integration-events`
+- `GET /api/facility-applications`
+- `POST /api/facility-applications`
+- `POST /api/facility-applications/review/{applicationNumber}`
+- `POST /api/facility-applications/approve/{applicationNumber}`
+- `POST /api/facility-applications/decline/{applicationNumber}`
 - `GET /api/templates/{fundingOffer|noticeOfAssignment|debtorConfirmation|collectionReminder}/{invoiceNumber}`
 - `GET /api/covenants`
 - `POST /api/invoices/import`

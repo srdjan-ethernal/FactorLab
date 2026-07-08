@@ -8,6 +8,7 @@ public enum ReportKind
     Underwriting,
     Ledger,
     BorrowingBase,
+    Applications,
     Payments,
     Disputes,
     Confirmations,

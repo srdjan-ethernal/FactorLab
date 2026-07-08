@@ -6,6 +6,7 @@ public interface IPortfolioRepository
 {
     FactoringTerms Terms { get; }
     List<ClientProfile> Clients { get; }
+    List<FacilityApplication> FacilityApplications { get; }
     List<DebtorProfile> Debtors { get; }
     List<Invoice> Invoices { get; }
     List<UnderwritingDecision> UnderwritingDecisions { get; }

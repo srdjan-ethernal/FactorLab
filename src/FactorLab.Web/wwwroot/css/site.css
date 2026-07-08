@@ -250,6 +250,112 @@ button:disabled {
     margin-bottom: 14px;
 }
 
+.onboarding-panel {
+    margin-bottom: 14px;
+}
+
+.onboarding-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.82fr) minmax(520px, 1.18fr);
+    gap: 12px;
+}
+
+.application-form,
+.application-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 14px;
+}
+
+.application-form {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+}
+
+.application-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.application-card {
+    display: grid;
+    min-height: 228px;
+    align-content: space-between;
+    gap: 10px;
+}
+
+.application-card p,
+.application-card small {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.application-card small {
+    font-weight: 750;
+}
+
+.application-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.application-metrics span {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--muted);
+    padding: 8px;
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.application-metrics b {
+    display: block;
+    margin-top: 3px;
+    color: var(--ink);
+    font-size: 0.9rem;
+}
+
+.application-status {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.application-status.submitted {
+    background: #eef2ed;
+    color: var(--muted);
+}
+
+.application-status.review {
+    background: #e7eff8;
+    color: var(--accent-2);
+}
+
+.application-status.info {
+    background: #fff1de;
+    color: #915015;
+}
+
+.application-status.approved {
+    background: #e7f3e8;
+    color: var(--good);
+}
+
+.application-status.declined {
+    background: #fde7e7;
+    color: var(--danger);
+}
+
 .offer-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1831,6 +1937,8 @@ pre {
     .metric-grid,
     .content-grid,
     .insight-grid,
+    .onboarding-layout,
+    .application-grid,
     .action-grid,
     .offer-grid,
     .covenant-grid,
