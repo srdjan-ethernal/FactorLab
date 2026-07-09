@@ -33,7 +33,7 @@ The full system design is maintained in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 1. Complete `EvmRpcTradeSubmitter` with a real signer and deployed `FactorLabReceivables` contract.
 2. Add background confirmation worker for submitted EVM transactions.
-3. Move in-memory portfolio data to Azure SQL via EF Core.
+3. Complete the SQL Server persistence path by running EF migrations, deploying the schema, and enabling `Persistence:Mode = SqlServer`.
 4. Add Entra authentication and role policies.
 5. Replace local document storage with Azure Blob Storage.
 6. Replace local document extraction with Azure AI Document Intelligence.

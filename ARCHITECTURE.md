@@ -134,6 +134,7 @@ Current internal API groups:
 Current mode:
 
 - `SamplePortfolioService` stores in-memory lists for fast product iteration.
+- `Persistence:Mode = Sample` is the default runtime.
 - Uploads use local app data.
 - EVM transactions are deterministic local records.
 
@@ -141,6 +142,9 @@ Production target:
 
 - Azure SQL Database for operational data.
 - EF Core via `FactorLabDbContext`.
+- `Persistence:Mode = SqlServer` activates `SqlPortfolioRepository` when the app is built with `EnableEfCore=true`.
+- `/api/persistence/status` reports the active provider.
+- `/api/persistence/save` flushes tracked SQL repository changes and newly added workflow records.
 - Azure Blob Storage for uploaded documents.
 - Azure Key Vault for secrets, RPC keys, connection strings, wallet references.
 - Application Insights for diagnostics and workflow telemetry.

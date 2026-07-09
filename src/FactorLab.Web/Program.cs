@@ -18,11 +18,31 @@ builder.Logging.AddConsole();
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.Configure<EvmContractOptions>(builder.Configuration.GetSection("Evm"));
+builder.Services.Configure<PortfolioPersistenceOptions>(builder.Configuration.GetSection("Persistence"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "Keys")));
 builder.Services.AddSingleton<FactoringCalculator>();
 builder.Services.AddSingleton<SamplePortfolioService>();
+#if ENABLE_EFCORE
+builder.Services.AddScoped<SqlPortfolioRepository>();
+builder.Services.AddScoped<IPortfolioRepository>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<PortfolioPersistenceOptions>>().Value;
+    return options.Mode.Equals("SqlServer", StringComparison.OrdinalIgnoreCase)
+        ? provider.GetRequiredService<SqlPortfolioRepository>()
+        : provider.GetRequiredService<SamplePortfolioService>();
+});
+builder.Services.AddScoped<IPortfolioPersistence>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<PortfolioPersistenceOptions>>().Value;
+    return options.Mode.Equals("SqlServer", StringComparison.OrdinalIgnoreCase)
+        ? provider.GetRequiredService<SqlPortfolioRepository>()
+        : new InMemoryPortfolioPersistence();
+});
+#else
 builder.Services.AddSingleton<IPortfolioRepository>(provider => provider.GetRequiredService<SamplePortfolioService>());
+builder.Services.AddSingleton<IPortfolioPersistence, InMemoryPortfolioPersistence>();
+#endif
 builder.Services.AddSingleton<CurrentUserService>();
 builder.Services.AddSingleton<IDocumentStorageService, LocalDocumentStorageService>();
 builder.Services.AddSingleton<IDocumentExtractionService, LocalDocumentExtractionService>();
@@ -86,6 +106,24 @@ app.MapGet("/api/portfolio/summary", (IPortfolioRepository portfolio, FactoringC
         summary.MissingRequiredDocuments,
         InvoiceCount = portfolio.Invoices.Count,
         ActiveInvoices = portfolio.Invoices.Count(invoice => invoice.FundingStage != FundingStage.Draft && invoice.FundingStage != FundingStage.Settled)
+    });
+});
+
+app.MapGet("/api/persistence/status", (IPortfolioPersistence persistence) =>
+    Results.Ok(new
+    {
+        Provider = persistence.ProviderName,
+        persistence.IsDurable
+    }));
+
+app.MapPost("/api/persistence/save", (IPortfolioPersistence persistence) =>
+{
+    var saved = persistence.SaveChanges();
+    return Results.Ok(new
+    {
+        Provider = persistence.ProviderName,
+        persistence.IsDurable,
+        SavedChanges = saved
     });
 });
 

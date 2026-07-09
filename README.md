@@ -24,6 +24,14 @@ dotnet restore FactorLab.sln --configfile NuGet.Config /p:EnableEfCore=true
 dotnet build FactorLab.sln --no-restore /p:EnableEfCore=true
 ```
 
+SQL Server mode is selected with:
+
+```json
+"Persistence": {
+  "Mode": "SqlServer"
+}
+```
+
 The default development URLs are:
 
 - `https://localhost:7192`
@@ -58,6 +66,7 @@ The default development URLs are:
 - Payment reconciliation CSV import for matched, partial and unmatched remittances.
 - Dispute and dilution management for open disputes, credit notes, resolution and chargeback paths.
 - Persistence foundation with repository contract, SQL Server schema, connection string and conditional EF Core setup.
+- SQL Server repository skeleton behind `EnableEfCore=true`, with sample mode as the default safe runtime.
 - SQL schema coverage for terms/risk policy, EVM trade events, action items, integration events, generated templates and covenant snapshots.
 - Auth-ready user and role model with Client, Underwriter, Operations and Admin personas.
 - Role-based UI actions for funding submission, underwriting and collections operations.
@@ -79,6 +88,8 @@ The default development URLs are:
 ## Internal API endpoints
 
 - `GET /api/portfolio/summary`
+- `GET /api/persistence/status`
+- `POST /api/persistence/save`
 - `GET /api/reports/{portfolio|exposure|collections|underwriting}`
 - `GET /api/action-items`
 - `GET /api/integration-events`

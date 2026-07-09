@@ -10,6 +10,27 @@ CREATE TABLE Clients (
     AccountManager nvarchar(160) NOT NULL
 );
 
+CREATE TABLE FacilityApplications (
+    ApplicationNumber nvarchar(80) NOT NULL CONSTRAINT PK_FacilityApplications PRIMARY KEY,
+    LegalName nvarchar(200) NOT NULL,
+    Industry nvarchar(160) NOT NULL,
+    Country nvarchar(80) NOT NULL,
+    ContactEmail nvarchar(260) NOT NULL,
+    RequestedLimit decimal(18,2) NOT NULL,
+    MonthlyTurnover decimal(18,2) NOT NULL,
+    AverageInvoiceSize decimal(18,2) NOT NULL,
+    ExpectedDebtorCount int NOT NULL,
+    YearsTrading int NOT NULL,
+    Status nvarchar(60) NOT NULL,
+    RiskScore int NOT NULL,
+    ApprovedLimit decimal(18,2) NOT NULL,
+    DecisionNote nvarchar(2000) NOT NULL,
+    AssignedTo nvarchar(160) NOT NULL,
+    SubmittedAt datetime2 NOT NULL,
+    ReviewedAt datetime2 NULL,
+    PortalToken nvarchar(80) NOT NULL
+);
+
 CREATE TABLE Debtors (
     Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_Debtors PRIMARY KEY,
     Name nvarchar(200) NOT NULL,
@@ -175,6 +196,28 @@ CREATE TABLE FundingBatches (
     InvoiceNumbers nvarchar(2000) NOT NULL
 );
 
+CREATE TABLE ClientOffers (
+    OfferNumber nvarchar(80) NOT NULL CONSTRAINT PK_ClientOffers PRIMARY KEY,
+    ClientName nvarchar(200) NOT NULL,
+    Status nvarchar(60) NOT NULL,
+    CreatedAt datetime2 NOT NULL,
+    ExpiresAt datetime2 NOT NULL,
+    SentToEmail nvarchar(260) NOT NULL,
+    AcceptedBy nvarchar(160) NOT NULL,
+    AcceptedAt datetime2 NULL,
+    InvoiceCount int NOT NULL,
+    GrossReceivables decimal(18,2) NOT NULL,
+    AdvanceAmount decimal(18,2) NOT NULL,
+    Fees decimal(18,2) NOT NULL,
+    ReserveHeld decimal(18,2) NOT NULL,
+    NetCash decimal(18,2) NOT NULL,
+    WeightedDays decimal(9,2) NOT NULL,
+    EffectiveApr decimal(9,2) NOT NULL,
+    InvoiceNumbers nvarchar(2000) NOT NULL,
+    PortalToken nvarchar(80) NOT NULL,
+    Notes nvarchar(2000) NOT NULL
+);
+
 CREATE TABLE EvmTradeEvents (
     EventId nvarchar(64) NOT NULL CONSTRAINT PK_EvmTradeEvents PRIMARY KEY,
     CreatedAt datetime2 NOT NULL,
@@ -281,6 +324,8 @@ CREATE TABLE FraudSignalSnapshots (
 );
 
 CREATE INDEX IX_Invoices_ClientName ON Invoices(ClientName);
+CREATE INDEX IX_FacilityApplications_Status ON FacilityApplications(Status);
+CREATE INDEX IX_FacilityApplications_SubmittedAt ON FacilityApplications(SubmittedAt DESC);
 CREATE INDEX IX_Invoices_Debtor ON Invoices(Debtor);
 CREATE INDEX IX_DocumentRequirements_InvoiceNumber ON DocumentRequirements(InvoiceNumber);
 CREATE INDEX IX_CollectionCases_Status ON CollectionCases(Status);
@@ -293,6 +338,9 @@ CREATE INDEX IX_DebtorConfirmationRequests_InvoiceNumber ON DebtorConfirmationRe
 CREATE INDEX IX_LedgerEntries_InvoiceNumber ON LedgerEntries(InvoiceNumber);
 CREATE INDEX IX_LedgerEntries_PostedAt ON LedgerEntries(PostedAt DESC);
 CREATE INDEX IX_FundingBatches_CreatedAt ON FundingBatches(CreatedAt DESC);
+CREATE INDEX IX_ClientOffers_Status ON ClientOffers(Status);
+CREATE INDEX IX_ClientOffers_ClientName ON ClientOffers(ClientName);
+CREATE INDEX IX_ClientOffers_PortalToken ON ClientOffers(PortalToken);
 CREATE INDEX IX_EvmTradeEvents_InvoiceNumber ON EvmTradeEvents(InvoiceNumber);
 CREATE INDEX IX_EvmTradeEvents_Status ON EvmTradeEvents(Status);
 CREATE INDEX IX_EvmTradeEvents_TransactionHash ON EvmTradeEvents(TransactionHash);
