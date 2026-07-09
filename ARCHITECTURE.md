@@ -74,15 +74,19 @@ Current behavior:
 - Client portal acceptance also records `SellReceivable`.
 - Funding batch creation records `BuyReceivable`.
 - Each event stores chain id, network, contract address, invoice, counterparty, amount, currency, payload hash, transaction hash, submission timestamp, confirmation timestamp, actor, and status.
-- The current `LocalEvmLedgerService` creates deterministic hashes locally so the product workflow is testable without an RPC key or wallet.
+- The current `LocalEvmLedgerService` calls an `IEvmTradeSubmitter`.
+- `SimulatedEvmTradeSubmitter` creates deterministic hashes locally so the product workflow is testable without an RPC key or wallet.
+- `EvmRpcTradeSubmitter` is the production adapter boundary selected by `Evm:Mode = Rpc`.
+- The Solidity contract skeleton lives in `contracts/FactorLabReceivables.sol`.
 
 Future production adapter:
 
-- Replace `LocalEvmLedgerService` with a Web3/EVM adapter.
+- Keep `LocalEvmLedgerService` as the business ledger orchestration layer.
+- Replace `SimulatedEvmTradeSubmitter` with a Web3/EVM submitter implementation.
 - Sign transactions with a controlled treasury/operator wallet.
 - Submit to the configured RPC endpoint.
 - Persist the real tx hash, block number, gas metadata, and confirmation status.
-- Keep the current service interface so the rest of the app does not change.
+- Keep the current `IEvmTradeSubmitter` and `IEvmLedgerService` interfaces so the rest of the app does not change.
 
 ## Domain Modules
 

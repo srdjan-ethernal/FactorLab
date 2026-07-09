@@ -31,7 +31,7 @@ The full system design is maintained in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Near-Term Engineering Priorities
 
-1. Replace `LocalEvmLedgerService` with a real EVM RPC/smart-contract implementation.
+1. Complete `EvmRpcTradeSubmitter` with a real signer and deployed `FactorLabReceivables` contract.
 2. Add background confirmation worker for submitted EVM transactions.
 3. Move in-memory portfolio data to Azure SQL via EF Core.
 4. Add Entra authentication and role policies.

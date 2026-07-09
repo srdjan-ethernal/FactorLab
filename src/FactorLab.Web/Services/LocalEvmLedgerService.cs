@@ -7,6 +7,13 @@ namespace FactorLab.Web.Services;
 
 public sealed class LocalEvmLedgerService : IEvmLedgerService
 {
+    private readonly IEvmTradeSubmitter submitter;
+
+    public LocalEvmLedgerService(IEvmTradeSubmitter submitter)
+    {
+        this.submitter = submitter;
+    }
+
     public EvmTradeEvent RecordTrade(IPortfolioRepository portfolio, Invoice invoice, EvmTradeAction action, string reference, string actor, string counterparty)
     {
         var existing = portfolio.EvmTradeEvents.FirstOrDefault(item =>
@@ -15,16 +22,6 @@ public sealed class LocalEvmLedgerService : IEvmLedgerService
             item.Reference.Equals(reference, StringComparison.OrdinalIgnoreCase));
 
         if (existing is not null) return existing;
-
-        var payload = string.Join("|",
-            action,
-            invoice.InvoiceNumber,
-            invoice.ClientName,
-            invoice.Debtor,
-            invoice.Amount.ToString("0.00"),
-            portfolio.Terms.Currency,
-            reference,
-            counterparty);
 
         var tradeEvent = new EvmTradeEvent
         {
@@ -37,12 +34,19 @@ public sealed class LocalEvmLedgerService : IEvmLedgerService
             Amount = invoice.Amount,
             Currency = portfolio.Terms.Currency,
             Actor = actor,
-            PayloadHash = Hash(payload),
             Note = $"{action} queued for EVM settlement."
         };
-        tradeEvent.TransactionHash = Hash($"{tradeEvent.EventId}|{tradeEvent.PayloadHash}|{tradeEvent.CreatedAt:O}");
+
+        tradeEvent.PayloadHash = Hash(EvmTradePayloadSerializer.Serialize(tradeEvent));
+        var submission = submitter.Submit(tradeEvent);
+        tradeEvent.ChainId = submission.ChainId;
+        tradeEvent.NetworkName = submission.NetworkName;
+        tradeEvent.ContractAddress = submission.ContractAddress;
+        tradeEvent.PayloadHash = submission.PayloadHash;
+        tradeEvent.TransactionHash = submission.TransactionHash;
         tradeEvent.Status = EvmTransactionStatus.Submitted;
         tradeEvent.SubmittedAt = DateTime.UtcNow;
+        tradeEvent.Note = submission.Note;
 
         portfolio.EvmTradeEvents.Add(tradeEvent);
         return tradeEvent;

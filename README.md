@@ -39,6 +39,7 @@ The default development URLs are:
 - Funding batch creation for approved invoices, including gross receivables, advance, fees, reserve and net cash.
 - Funding ledger for advances, fees, reserve held, debtor payments, reserve release and chargebacks.
 - EVM blockchain ledger for every receivable buy/sell action, including chain id, contract address, payload hash, transaction hash and confirmation status.
+- EVM smart contract skeleton in `contracts/FactorLabReceivables.sol` plus configurable submitter mode (`Simulated` now, `Rpc` adapter boundary for production).
 - Client offer portal workflow with offer creation, send, acceptance, decline, expiry, portal token, dedicated `/portal/{token}` page and transparent fee metrics.
 - Document checklist for each invoice, including invoice, PO/contract, proof of delivery, debtor confirmation, KYC, and notice of assignment.
 - Document readiness metrics and reviewer notes.

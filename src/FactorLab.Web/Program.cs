@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using FactorLab.Web.Domain;
 using FactorLab.Web.Persistence;
 using FactorLab.Web.Services;
+using Microsoft.Extensions.Options;
 #if ENABLE_EFCORE
 using Microsoft.EntityFrameworkCore;
 #endif
@@ -16,6 +17,7 @@ builder.Logging.AddConsole();
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.Configure<EvmContractOptions>(builder.Configuration.GetSection("Evm"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "Keys")));
 builder.Services.AddSingleton<FactoringCalculator>();
@@ -40,6 +42,13 @@ builder.Services.AddSingleton<IDebtorConfirmationService, DebtorConfirmationServ
 builder.Services.AddSingleton<IFraudSignalService, FraudSignalService>();
 builder.Services.AddSingleton<IClientOfferService, ClientOfferService>();
 builder.Services.AddSingleton<IFacilityApplicationService, FacilityApplicationService>();
+builder.Services.AddSingleton<IEvmTradeSubmitter>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<EvmContractOptions>>().Value;
+    return options.Mode.Equals("Rpc", StringComparison.OrdinalIgnoreCase)
+        ? ActivatorUtilities.CreateInstance<EvmRpcTradeSubmitter>(provider)
+        : ActivatorUtilities.CreateInstance<SimulatedEvmTradeSubmitter>(provider);
+});
 builder.Services.AddSingleton<IEvmLedgerService, LocalEvmLedgerService>();
 #if ENABLE_EFCORE
 builder.Services.AddDbContext<FactorLabDbContext>(options =>
